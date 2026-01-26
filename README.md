@@ -69,11 +69,26 @@ graph TD
 ## ⚙️ Configuration
 Modify `config.yaml` to change models, chunk sizes, or LLM providers.
 
+### Local Setup (Ollama)
 ```yaml
 llm:
   provider: "ollama"
   ollama:
     model: "llama2"
+```
+
+### Cloud Setup (Gemini)
+To use Google Gemini, set your API key as an environment variable:
+```bash
+export GOOGLE_API_KEY="your-api-key-here"
+```
+Or configure it directly in `config.yaml`:
+```yaml
+llm:
+  provider: "gemini"
+  gemini:
+    model: "gemini-1.5-pro"
+    api_key: "your-api-key-here"
 ```
 
 ## 🧪 Testing
