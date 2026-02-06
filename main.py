@@ -80,6 +80,14 @@ class ExternalMemorySystem:
         """
         # 1. Chunk
         chunks = self.chunker.chunk_by_words(text)
+        if not chunks:
+            return {
+                'chunks_created': 0,
+                'embeddings_stored': 0,
+                'source': source,
+                'file_type': file_type,
+                'message': 'No text content found to ingest'
+            }
         metadata = self.chunker.get_chunk_metadata(chunks)
         for m in metadata:
             if source: m['source'] = source
@@ -137,12 +145,23 @@ class ExternalMemorySystem:
             'java': 'java',
             'rb': 'ruby',
             'php': 'php',
-            'env': 'config'
+            'env': 'config',
+            'pdf': 'pdf'
         }
         f_type = file_type_map.get(ext, 'text')
         
-        with open(path, 'r') as f:
-            text = f.read()
+        if ext == 'pdf':
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(path)
+                text = ""
+                for page in reader.pages:
+                    text += page.extract_text() + "\n"
+            except ImportError:
+                raise RuntimeError("Install pypdf to ingest PDF files: pip install pypdf")
+        else:
+            with open(path, 'r') as f:
+                text = f.read()
             
         return self.ingest_document(
             text, 
