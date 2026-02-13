@@ -17,7 +17,7 @@ class TestContextAssembler:
         assert chunks[0]['text'] in prompt
         assert chunks[1]['text'] in prompt
         assert query in prompt
-        assert "[Chunk 1 - Score: 0.950]" in prompt
+        assert "[Source: Document 1 (.txt) - Score: 0.950]" in prompt
     
     def test_truncation(self):
         # Max length only allows one chunk
