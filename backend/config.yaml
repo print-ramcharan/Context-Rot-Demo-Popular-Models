@@ -35,8 +35,8 @@ llm:
   
   # For Gemini (requires API key)
   gemini:
-    model: "gemma-3-27b-it"
-    api_key: ""
+    model: "gemini-2.5-flash"
+    api_key: "${GEMINI_API_KEY}"
   
   # Common parameters
   max_tokens: 1000

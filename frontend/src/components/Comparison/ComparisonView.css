@@ -1,0 +1,234 @@
+.comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 24px;
+  padding: 20px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Individual Response Cards */
+.response-card {
+  background: white;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-left: 5px solid #ccc;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.response-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+.response-card.standard {
+  border-left-color: #3498db;
+}
+
+.response-card.rag {
+  border-left-color: #2ecc71;
+}
+
+/* Heading */
+.response-card h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.3em;
+  color: #2c3e50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Label */
+.response-card .label {
+  margin: 0 0 16px 0;
+  font-size: 0.85em;
+  color: #7f8c8d;
+  font-style: italic;
+  border-bottom: 1px solid #ecf0f1;
+  padding-bottom: 8px;
+}
+
+/* Response Text */
+.response-text {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 16px;
+  margin: 16px 0;
+  line-height: 1.6;
+  color: #2c3e50;
+  min-height: 120px;
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 0.95em;
+}
+
+.response-text::-webkit-scrollbar {
+  width: 6px;
+}
+
+.response-text::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.response-text::-webkit-scrollbar-thumb {
+  background: #bbb;
+  border-radius: 10px;
+}
+
+.response-text::-webkit-scrollbar-thumb:hover {
+  background: #888;
+}
+
+/* Context Details (Collapsible) */
+.context-details {
+  margin: 16px 0;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.context-details summary {
+  padding: 12px 16px;
+  background: #f0f4ff;
+  cursor: pointer;
+  font-weight: 600;
+  color: #2c3e50;
+  user-select: none;
+  transition: background 0.3s ease;
+}
+
+.context-details summary:hover {
+  background: #e8ecff;
+}
+
+.context-details summary::marker {
+  color: #3498db;
+}
+
+.context-box {
+  padding: 16px;
+  background: #fafbfc;
+  border-top: 1px solid #e9ecef;
+  font-size: 0.9em;
+  line-height: 1.5;
+  color: #555;
+  max-height: 200px;
+  overflow-y: auto;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+/* Metadata */
+.metadata {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #ecf0f1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metadata p {
+  margin: 0;
+  font-size: 0.85em;
+  color: #7f8c8d;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.metadata code {
+  background: #ecf0f1;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  color: #2c3e50;
+  font-weight: 600;
+}
+
+.response-card.standard .metadata code {
+  background: #d6eaf8;
+  color: #1e5a96;
+}
+
+.response-card.rag .metadata code {
+  background: #d5f4e6;
+  color: #0b6623;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .comparison-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .comparison-grid {
+    padding: 16px;
+    gap: 16px;
+  }
+
+  .response-card {
+    padding: 16px;
+  }
+
+  .response-card h3 {
+    font-size: 1.1em;
+  }
+
+  .response-text {
+    min-height: 100px;
+    max-height: 250px;
+    font-size: 0.9em;
+  }
+
+  .metadata {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .metadata p {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .comparison-grid {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .response-card {
+    padding: 12px;
+    border-left-width: 4px;
+  }
+
+  .response-card h3 {
+    font-size: 1em;
+  }
+
+  .response-text {
+    padding: 12px;
+    font-size: 0.85em;
+    min-height: 80px;
+  }
+
+  .context-box {
+    padding: 12px;
+    font-size: 0.85em;
+  }
+
+  .metadata p {
+    font-size: 0.8em;
+  }
+}

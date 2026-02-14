@@ -1,0 +1,85 @@
+# Python virtual environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Data files (uploaded files)
+data/
+uploads/
+*.csv
+*.txt
+*.pdf
+*.docx
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json

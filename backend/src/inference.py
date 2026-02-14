@@ -1,6 +1,7 @@
 import os
 import time
 from typing import Optional, Dict, Any
+from dotenv import load_dotenv
 
 class LLMInference:
     """
@@ -33,7 +34,7 @@ class LLMInference:
             "huggingface": "mistralai/Mistral-7B-Instruct-v0.2",
             "anthropic": "claude-3-sonnet-20240229",
             "openai": "gpt-4-turbo",
-            "gemini": "gemini-1.5-pro"
+            "gemini": "gemini-2.5-flash"
         }
         return defaults.get(self.provider, "llama2")
     
@@ -119,16 +120,22 @@ class LLMInference:
         """Initialize Google Gemini API."""
         try:
             import google.generativeai as genai
-            api_key = self.config.get('api_key') or os.getenv('GOOGLE_API_KEY')
+            
+            
+            # Load environment variables from .env file
+            load_dotenv()
+           
+            
+            api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
             if not api_key:
                 raise ValueError(
                     "Gemini API key not found. Please set 'api_key' in config.yaml "
-                    "or set the GOOGLE_API_KEY environment variable."
+                    "or set the GEMINI_API_KEY or GOOGLE_API_KEY environment variable in your .env file."
                 )
             genai.configure(api_key=api_key)
             self.client = genai.GenerativeModel(self.model)
         except ImportError:
-            raise RuntimeError("Install with: pip install google-generativeai")
+            raise RuntimeError("Install with: pip install google-generativeai python-dotenv")
     
     def generate(self, prompt: str, max_tokens: int = 1000, 
                  temperature: float = 0.7) -> Dict[str, Any]:
