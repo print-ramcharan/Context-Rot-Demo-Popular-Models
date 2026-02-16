@@ -44,12 +44,34 @@ class UploadResponse(BaseModel):
     chunks_created: int = 0
     embeddings_stored: int = 0
 
+import yaml
+
+def load_config(path: str = "config.yaml") -> dict:
+    if os.path.exists(path):
+        with open(path, 'r') as f:
+            return yaml.safe_load(f)
+    return {}
+
+config = load_config()
+llm_cfg = config.get('llm', {})
+gemini_cfg = llm_cfg.get('gemini', {})
+
 # Initialize AI Components (Done once at startup for speed)
 store = VectorStore(dimension=384)  # Dimension for MiniLM
 gen = EmbeddingGenerator()
-llm = LLMInference(provider="gemini")  # Connects to Google Gemini
+# Pass the Gemini config (containing api_key) to LLMInference
+llm = LLMInference(provider="gemini", config=gemini_cfg)  
 retriever = SemanticRetriever(store, gen, top_k=3)
 chunker = TextChunker(chunk_size=512, overlap=50)  # Create chunker
+
+# Load existing index if it exists
+INDEX_PATH = "memory_index"
+if os.path.exists(INDEX_PATH) and os.path.exists(os.path.join(INDEX_PATH, "index.faiss")):
+    try:
+        store.load(INDEX_PATH)
+        logger.info(f"Loaded existing memory index from {INDEX_PATH} with {len(store.chunks)} chunks")
+    except Exception as e:
+        logger.error(f"Failed to load existing index: {e}")
 
 # Data directory
 DATA_DIR = Path("data")
@@ -131,6 +153,13 @@ async def upload_file(file: UploadFile = File(...)):
         
         store.add(embeddings, chunk_texts, metadata=metadata_list)
         logger.info(f"Added {len(chunks)} chunks to vector store")
+        
+        # Save to disk
+        try:
+            store.save(INDEX_PATH)
+            logger.info("Saved updated memory index to disk")
+        except Exception as e:
+            logger.error(f"Failed to save index: {e}")
         
         return UploadResponse(
             status="success",

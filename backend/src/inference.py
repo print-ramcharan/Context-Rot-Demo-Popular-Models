@@ -126,7 +126,7 @@ class LLMInference:
             load_dotenv()
            
             
-            api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+            api_key = self.config.get('api_key') or os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
             if not api_key:
                 raise ValueError(
                     "Gemini API key not found. Please set 'api_key' in config.yaml "
