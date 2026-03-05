@@ -5,13 +5,21 @@ This project implements an external memory system for Large Language Models to m
 ## Project Structure
 
 - `backend/`: Python-based external memory system using FAISS and Ollama/Gemini.
-- `frontend/`: (Coming Soon) Web interface for interacting with the memory system.
+  - `api.py`: FastAPI entrypoint.
+  - `chunker.py`: Document chunking utilities.
+  - `vector_store.py`: Vector store helpers (updated with new method).
+- `frontend/`: Web interface for interacting with the memory system (updated UI).
 
 ## Getting Started
 
-To get started with the backend:
+### Backend
 
 ```bash
 cd backend
-# Instructions for setup are in backend/README.md
+# install dependencies per backend/README.md
+fastapi dev api.py
 ```
+
+### Environment Variables
+
+Make sure required API keys are set in your environment (see backend/README.md for exact names).

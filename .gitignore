@@ -4,3 +4,9 @@ __pycache__/
 .env
 venv/
 .pytest_cache/
+backend/memory_index/
+memory_index/
+backend/.env
+node_modules/
+dist/
+coverage/

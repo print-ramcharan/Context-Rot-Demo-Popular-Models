@@ -177,3 +177,8 @@ class VectorStore:
         self.chunks = []
         self.metadata = []
         self._initialize_index()
+
+    def get_all_texts(self):
+        """Get all stored text chunks."""
+        return self.chunks if self.chunks else []
+   
