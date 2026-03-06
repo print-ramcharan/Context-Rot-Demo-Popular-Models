@@ -1,11 +1,14 @@
-# Context Engine - RAG Evaluation Platform
+# Context Rot Lab — RAG Evaluation Platform
 
-> **Modular RAG Architecture · 2026 Edition**
+> **AI-Native UI · RAG vs Standard · 2026 Edition**
 
 A production-ready demonstration platform that showcases the difference between standard LLM usage and optimized Retrieval-Augmented Generation (RAG). Built to solve the "Context Rot" problem where LLMs degrade in performance as context length increases.
 
-<img width="1918" height="920" alt="Screenshot 2026-02-14 152433" src="https://github.com/user-attachments/assets/cfadafcc-1f69-4f3d-9a29-fc7a8c60a607" />
-<img width="1898" height="907" alt="Screenshot 2026-02-14 152532" src="https://github.com/user-attachments/assets/52e6bf0b-6451-4208-a8d1-0c6959e8f94e" />
+**Dark Mode**
+![Dark Mode UI](public/screenshot-dark.png)
+
+**Light Mode**
+![Light Mode UI](public/screenshot-light.png)
 
 
 
@@ -200,11 +203,13 @@ Context-Rot-Demo-Popular-Models/
 ## 🎨 **Features**
 
 ### **1. Professional UI**
-- 🎨 Modern dark theme (#050505 background)
+- 🌗 Light/dark theme toggle — persists via localStorage
+- 💜 Purple AI-Native design system (Inter + JetBrains Mono fonts)
 - 🟢 Emerald accents for RAG (optimized)
 - 🔴 Red accents for Standard (context rot)
-- ✨ Smooth animations and transitions
-- 📱 Fully responsive design
+- ✨ Glassmorphism header, radial glow background, shimmer skeletons
+- 🖊️ Word-by-word streaming text reveal on responses
+- 📱 Fully responsive (375px → 1440px)
 
 ### **2. Upload System**
 - 📤 Drag-and-drop or click to upload
