@@ -211,6 +211,17 @@ Context-Rot-Demo-Popular-Models/
 - 🖊️ Word-by-word streaming text reveal on responses
 - 📱 Fully responsive (375px → 1440px)
 
+### **1b. Context Rot Strategy (How it Actually Works)**
+
+The Standard path uses **two techniques** to reliably demonstrate degradation:
+
+| Technique | What it does |
+|-----------|-------------|
+| **Weaker model** | `gemini-1.5-flash-8b` — lower reasoning capacity than 2.5-flash |
+| **Noise injection** | 80% of the Standard path's context is irrelevant filler paragraphs interleaved between real chunks, simulating the [Lost in the Middle](https://arxiv.org/abs/2307.03172) effect |
+
+The RAG path uses `gemini-2.5-flash` with only 3 semantically retrieved, clean chunks — making the quality contrast dramatic and consistent regardless of document size.
+
 ### **2. Upload System**
 - 📤 Drag-and-drop or click to upload
 - ✅ Supports PDF, DOCX, TXT, MD
