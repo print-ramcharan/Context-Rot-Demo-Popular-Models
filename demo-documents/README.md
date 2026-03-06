@@ -19,7 +19,7 @@ These documents are pre-selected to reliably demonstrate Context Rot.
 Ask something specific that's buried deep in the text:
 
 ```
-What is the name of Prince Andrei's wife?
+What is the name of Prince Andrew's wife?
 ```
 ```
 What battle does Pierre witness firsthand?
@@ -28,7 +28,7 @@ What battle does Pierre witness firsthand?
 Who does Natasha fall in love with at her first ball?
 ```
 ```
-What happens to Andrei at the Battle of Austerlitz?
+What happens to Prince Andrew at the Battle of Austerlitz?
 ```
 
 The Standard path will burn through the entire 800k-token document trying to find it.
