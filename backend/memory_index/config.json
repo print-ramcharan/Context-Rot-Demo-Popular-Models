@@ -1,1 +1,1 @@
-{"dimension": 384, "index_type": "cosine"}
+{"dimension": 384, "index_type": "L2"}
