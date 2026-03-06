@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import axios from 'axios';
-import { UploadCloud, CheckCircle2, Loader2, AlertCircle, FileText } from 'lucide-react';
+import { UploadCloud, CheckCircle2, Loader2, AlertCircle, FileText, RefreshCw } from 'lucide-react';
 
 export default function FileDropzone({ onUpload }) {
   const [status, setStatus] = useState('idle');
@@ -11,7 +11,6 @@ export default function FileDropzone({ onUpload }) {
 
   const handleFile = useCallback(async (file) => {
     if (!file) return;
-
     try {
       setStatus('uploading');
       setFileName(file.name);
@@ -31,16 +30,12 @@ export default function FileDropzone({ onUpload }) {
       clearInterval(progressInterval);
       setProgress(100);
       setStatus('success');
-      
-      // Keep upload info permanently - DON'T reset!
       setUploadInfo({
         filename: file.name,
         chunks: response.data.chunks_created || 0,
-        embeddings: response.data.embeddings_stored || 0
+        embeddings: response.data.embeddings_stored || 0,
       });
-      
       onUpload?.(file);
-
     } catch (err) {
       console.error('Upload error:', err);
       setStatus('error');
@@ -48,72 +43,85 @@ export default function FileDropzone({ onUpload }) {
     }
   }, [onUpload]);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    handleFile(file);
-  };
+  const handleFileChange = (e) => { handleFile(e.target.files?.[0]); };
 
   const handleDrag = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
+    e.preventDefault(); e.stopPropagation();
+    setDragActive(e.type === 'dragenter' || e.type === 'dragover');
   }, []);
 
   const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     setDragActive(false);
-    const file = e.dataTransfer.files?.[0];
-    handleFile(file);
+    handleFile(e.dataTransfer.files?.[0]);
   }, [handleFile]);
 
   const handleReupload = () => {
-    setStatus('idle');
-    setFileName('');
-    setUploadInfo(null);
-    setProgress(0);
+    setStatus('idle'); setFileName(''); setUploadInfo(null); setProgress(0);
   };
 
-  // ✅ SUCCESS STATE - Shows permanently!
+  /* ── SUCCESS STATE ── */
   if (status === 'success' && uploadInfo) {
     return (
-      <div className="w-full rounded-2xl border-2 border-emerald-500/50 bg-emerald-500/5 px-6 py-8">
-        <div className="flex items-start gap-4">
-          <div className="relative flex-shrink-0">
-            <CheckCircle2 className="h-12 w-12 text-emerald-400" />
-            <div className="absolute inset-0 rounded-full bg-emerald-400/20 blur-xl" />
+      <div className="animate-fade-up" style={{
+        borderRadius: '14px',
+        border: '1px solid rgba(16, 185, 129, 0.3)',
+        background: 'var(--bg-surface)',
+        padding: '24px',
+        boxShadow: '0 0 0 4px rgba(16, 185, 129, 0.06)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+          <div style={{
+            width: '44px', height: '44px', flexShrink: 0,
+            borderRadius: '12px',
+            background: 'rgba(16, 185, 129, 0.12)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <CheckCircle2 size={22} style={{ color: 'var(--emerald-400)' }} />
           </div>
-          
-          <div className="flex-1">
-            <h3 className="text-lg font-bold text-emerald-400 mb-1">
-              ✓ Document Indexed Successfully
-            </h3>
-            
-            <div className="flex items-center gap-2 text-sm text-gray-400 mb-3">
-              <FileText className="h-4 w-4" />
-              <span className="font-medium text-white">{uploadInfo.filename}</span>
+
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--emerald-400)', marginBottom: '4px' }}>
+              Document indexed successfully
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px' }}>
+              <FileText size={13} style={{ color: 'var(--text-muted)' }} />
+              <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                {uploadInfo.filename}
+              </span>
             </div>
-            
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="rounded-lg border border-emerald-500/20 bg-[#0b0b0b] px-3 py-2">
-                <div className="text-xs text-gray-500">Chunks Created</div>
-                <div className="text-lg font-bold text-emerald-400">{uploadInfo.chunks}</div>
-              </div>
-              <div className="rounded-lg border border-emerald-500/20 bg-[#0b0b0b] px-3 py-2">
-                <div className="text-xs text-gray-500">Embeddings Stored</div>
-                <div className="text-lg font-bold text-emerald-400">{uploadInfo.embeddings}</div>
-              </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+              {[
+                { label: 'Chunks Created', value: uploadInfo.chunks },
+                { label: 'Embeddings Stored', value: uploadInfo.embeddings },
+              ].map(({ label, value }) => (
+                <div key={label} style={{
+                  borderRadius: '10px',
+                  border: '1px solid var(--border)',
+                  background: 'var(--bg-card)',
+                  padding: '12px 14px',
+                }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>{label}</div>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--emerald-400)', fontFamily: "'JetBrains Mono', monospace" }}>
+                    {value}
+                  </div>
+                </div>
+              ))}
             </div>
-            
-            <button
-              onClick={handleReupload}
-              className="text-sm text-emerald-400 hover:text-emerald-300 transition-colors underline"
+
+            <button onClick={handleReupload} style={{
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              fontSize: '12px', color: 'var(--text-muted)', cursor: 'pointer',
+              background: 'none', border: 'none', padding: 0,
+              fontFamily: 'inherit',
+            }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--text-secondary)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
             >
-              Upload a different document
+              <RefreshCw size={12} />
+              Replace document
             </button>
           </div>
         </div>
@@ -121,78 +129,98 @@ export default function FileDropzone({ onUpload }) {
     );
   }
 
-  // Regular upload zone
+  /* ── UPLOAD ZONE ── */
+  const isError = status === 'error';
+  const isUploading = status === 'uploading';
+
   return (
-    <div className="w-full">
+    <div style={{ width: '100%' }}>
       <label
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
         onDrop={handleDrop}
-        className={`
-          group relative flex w-full cursor-pointer flex-col items-center justify-center 
-          rounded-2xl border-2 border-dashed transition-all duration-300
-          ${dragActive 
-            ? 'border-emerald-500 bg-emerald-500/5' 
-            : status === 'error'
-            ? 'border-red-500/50 bg-red-500/5'
-            : 'border-[#1a1a1a] bg-[#0b0b0b] hover:border-emerald-500/30 hover:bg-[#0f0f0f]'
-          }
-          px-6 py-12 text-center
-        `}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          minHeight: '180px',
+          borderRadius: '14px',
+          border: `2px dashed ${dragActive ? 'var(--purple-500)' :
+              isError ? 'var(--red-400)' :
+                isUploading ? 'var(--purple-400)' :
+                  'var(--border-strong)'
+            }`,
+          background: dragActive ? 'rgba(139,92,246,0.05)' : 'var(--bg-surface)',
+          cursor: isUploading ? 'default' : 'pointer',
+          textAlign: 'center',
+          padding: '32px 24px',
+          transition: 'border-color 0.2s ease, background 0.2s ease',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
       >
         <input
           type="file"
-          className="hidden"
+          style={{ display: 'none' }}
           onChange={handleFileChange}
           accept=".pdf,.txt,.docx,.md"
-          disabled={status === 'uploading'}
+          disabled={isUploading}
         />
 
-        <div className="mb-4">
-          {status === 'uploading' && (
-            <div className="relative">
-              <Loader2 className="h-12 w-12 animate-spin text-emerald-400" />
-              <div className="absolute inset-0 animate-pulse rounded-full bg-emerald-400/20 blur-xl" />
+        {/* Icon */}
+        <div style={{ marginBottom: '12px' }}>
+          {isUploading && (
+            <div style={{ position: 'relative', display: 'inline-flex' }}>
+              <Loader2 size={36} className="animate-spin-slow" style={{ color: 'var(--purple-400)' }} />
             </div>
           )}
-          {status === 'error' && (
-            <AlertCircle className="h-12 w-12 text-red-400" />
-          )}
-          {status === 'idle' && (
-            <UploadCloud className={`h-12 w-12 transition-colors ${
-              dragActive ? 'text-emerald-400' : 'text-gray-500 group-hover:text-emerald-400'
-            }`} />
+          {isError && <AlertCircle size={36} style={{ color: 'var(--red-400)' }} />}
+          {!isUploading && !isError && (
+            <UploadCloud size={36} style={{
+              color: dragActive ? 'var(--purple-400)' : 'var(--text-muted)',
+              transition: 'color 0.2s ease',
+            }} />
           )}
         </div>
 
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-white">
-            {status === 'uploading' && `Indexing ${fileName}...`}
-            {status === 'error' && 'Upload failed — please try again'}
-            {status === 'idle' && (dragActive ? 'Drop your document here' : 'Drop a document or click to upload')}
+        {/* Text */}
+        <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
+          {isUploading && `Indexing ${fileName}…`}
+          {isError && 'Upload failed — please try again'}
+          {!isUploading && !isError && (dragActive ? 'Drop to upload' : 'Drop a document, or click to browse')}
+        </p>
+
+        {!isUploading && !isError && (
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            PDF, DOCX, TXT, Markdown · Max 10 MB
           </p>
-          
-          {status === 'idle' && (
-            <p className="text-xs text-gray-500">
-              Supports PDF, DOCX, TXT, and Markdown · Max 10MB
-            </p>
-          )}
+        )}
 
-          {status === 'uploading' && (
-            <div className="mt-4 w-64 mx-auto">
-              <div className="h-1.5 w-full rounded-full bg-[#1a1a1a] overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-300 ease-out"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <p className="mt-2 text-xs text-gray-500">{progress}% complete</p>
+        {/* Progress bar */}
+        {isUploading && (
+          <div style={{ marginTop: '20px', width: '240px' }}>
+            <div style={{
+              height: '4px', width: '100%',
+              borderRadius: '9999px',
+              background: 'var(--bg-hover)',
+              overflow: 'hidden',
+            }}>
+              <div style={{
+                height: '100%',
+                width: `${progress}%`,
+                borderRadius: '9999px',
+                background: 'linear-gradient(90deg, var(--purple-600), var(--purple-400))',
+                transition: 'width 0.3s ease',
+              }} />
             </div>
-          )}
-        </div>
-
-        <div className="absolute inset-0 -z-10 rounded-2xl bg-gradient-to-br from-emerald-500/0 via-emerald-500/0 to-emerald-500/5 opacity-0 transition-opacity group-hover:opacity-100" />
+            <p style={{ marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}>
+              {progress}%
+            </p>
+          </div>
+        )}
       </label>
     </div>
   );

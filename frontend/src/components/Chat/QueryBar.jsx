@@ -1,25 +1,92 @@
-import React from 'react';
-import { Sparkles } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Sparkles, ArrowRight } from 'lucide-react';
 
 export default function QueryBar({ value, onChange, onSubmit, loading }) {
+  const inputRef = useRef(null);
+
   return (
     <form
       onSubmit={onSubmit}
-      className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-2xl border border-[#1a1a1a] bg-[#0b0b0b] px-4 py-3"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0',
+        width: '100%',
+        borderRadius: '12px',
+        border: '1px solid var(--border-strong)',
+        background: 'var(--bg-surface)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+        overflow: 'hidden',
+        transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+      }}
+      onFocusCapture={e => e.currentTarget.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.18), 0 1px 3px rgba(0,0,0,0.12)'}
+      onBlurCapture={e => e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)'}
     >
-      <Sparkles className="h-5 w-5 text-emerald-400" />
+      {/* Left icon */}
+      <div style={{
+        padding: '0 14px',
+        display: 'flex', alignItems: 'center',
+        flexShrink: 0,
+      }}>
+        {loading
+          ? (
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+            </div>
+          )
+          : <Sparkles size={16} style={{ color: 'var(--purple-400)' }} />
+        }
+      </div>
+
+      {/* Input */}
       <input
+        ref={inputRef}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Ask a question about your indexed sources..."
-        className="w-full bg-transparent text-sm text-white placeholder:text-gray-500 outline-none"
+        onChange={e => onChange(e.target.value)}
+        placeholder="Ask a question about your document…"
+        disabled={loading}
+        style={{
+          flex: 1,
+          padding: '14px 4px',
+          fontSize: '14px',
+          color: 'var(--text-primary)',
+          background: 'transparent',
+          border: 'none',
+          outline: 'none',
+          fontFamily: 'inherit',
+        }}
       />
+
+      {/* Submit button */}
       <button
         type="submit"
-        disabled={loading}
-        className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
+        disabled={loading || !value.trim()}
+        style={{
+          flexShrink: 0,
+          margin: '6px',
+          padding: '8px 18px',
+          borderRadius: '8px',
+          border: 'none',
+          background: loading || !value.trim()
+            ? 'var(--bg-hover)'
+            : 'linear-gradient(135deg, var(--purple-600), var(--purple-500))',
+          color: loading || !value.trim() ? 'var(--text-muted)' : '#fff',
+          fontSize: '13px',
+          fontWeight: 600,
+          fontFamily: 'inherit',
+          cursor: loading || !value.trim() ? 'not-allowed' : 'pointer',
+          display: 'flex', alignItems: 'center', gap: '6px',
+          transition: 'opacity 0.2s ease, background 0.2s ease',
+          letterSpacing: '0.01em',
+        }}
+        onMouseEnter={e => {
+          if (!loading && value.trim()) e.currentTarget.style.opacity = '0.9';
+        }}
+        onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
       >
-        {loading ? 'Thinking...' : 'Query'}
+        {loading ? 'Analyzing…' : <>Query <ArrowRight size={13} /></>}
       </button>
     </form>
   );
