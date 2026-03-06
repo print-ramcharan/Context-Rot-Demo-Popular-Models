@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Zap, BookOpen, Clock, Cpu, ChevronDown } from 'lucide-react';
+import { AlertTriangle, Zap, BookOpen, Clock, Cpu, ChevronDown, TrendingDown, DollarSign, Activity } from 'lucide-react';
 
 /* ── Skeleton row ── */
 function SkeletonRow({ width = '100%', delay = 0 }) {
@@ -270,40 +270,128 @@ function ResponsePane({ type, title, subtitle, icon: Icon, response, loading, so
   );
 }
 
+/* ── Performance Metrics Banner ── */
+function PerformanceMetrics({ standard, rag }) {
+  if (!standard || !rag) return null;
+
+  const stdTokens = standard.tokens_used?.total || 0;
+  const ragTokens = rag.tokens_used?.total || 0;
+
+  const stdTime = standard.latency_ms || 0;
+  const ragTime = rag.latency_ms || 0;
+
+  // Gemini 1.5/2.5 Flash approx pricing: $0.075 per 1M input tokens
+  const COST_PER_1M_TOKENS = 0.075;
+  const stdCost = (stdTokens / 1000000) * COST_PER_1M_TOKENS;
+  const ragCost = (ragTokens / 1000000) * COST_PER_1M_TOKENS;
+
+  // Savings math
+  const tokenSavings = stdTokens > 0 ? ((stdTokens - ragTokens) / stdTokens * 100).toFixed(1) : 0;
+  const timeSavings = stdTime > 0 ? ((stdTime - ragTime) / stdTime * 100).toFixed(1) : 0;
+  const costSavingsMult = ragCost > 0 ? Math.round(stdCost / ragCost) : 0;
+
+  return (
+    <div className="animate-fade-in" style={{
+      marginBottom: '24px',
+      padding: '20px 24px',
+      borderRadius: '16px',
+      background: 'linear-gradient(145deg, rgba(16,185,129,0.08) 0%, rgba(16,185,129,0.02) 100%)',
+      border: '1px solid rgba(16,185,129,0.2)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '16px'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Activity size={18} style={{ color: 'var(--emerald-500)' }} />
+        <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--emerald-400)' }}>
+          RAG Efficiency Gains
+        </h3>
+      </div>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '16px'
+      }}>
+        <div style={{ background: 'var(--bg-surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+            <Clock size={14} /> <span style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time Saved</span>
+          </div>
+          <p style={{ fontSize: '24px', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+            {timeSavings}% <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)' }}>faster</span>
+          </p>
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', fontFamily: "'JetBrains Mono', monospace" }}>
+            {(stdTime / 1000).toFixed(1)}s &rarr; {(ragTime / 1000).toFixed(1)}s
+          </p>
+        </div>
+
+        <div style={{ background: 'var(--bg-surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+            <TrendingDown size={14} /> <span style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Compute Saved</span>
+          </div>
+          <p style={{ fontSize: '24px', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+            {tokenSavings}% <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)' }}>fewer tokens</span>
+          </p>
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', fontFamily: "'JetBrains Mono', monospace" }}>
+            {stdTokens.toLocaleString()} &rarr; {ragTokens.toLocaleString()}
+          </p>
+        </div>
+
+        <div style={{ background: 'var(--bg-surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+            <DollarSign size={14} /> <span style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cost Reduction</span>
+          </div>
+          <p style={{ fontSize: '24px', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+            {costSavingsMult}x <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)' }}>cheaper</span>
+          </p>
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', fontFamily: "'JetBrains Mono', monospace" }}>
+            ${stdCost.toFixed(5)} &rarr; ${ragCost.toFixed(6)}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Public export ── */
 export default function ComparisonView({ standard, rag, loadingStandard, loadingRag, sources = [] }) {
+  const isComplete = standard && rag && !loadingStandard && !loadingRag;
+
   return (
-    <div style={{
-      display: 'flex',
-      gap: '16px',
-      alignItems: 'stretch',
-    }}
-      className="comparison-grid"
-    >
-      <style>{`
+    <div>
+      {isComplete && <PerformanceMetrics standard={standard} rag={rag} />}
+      <div style={{
+        display: 'flex',
+        gap: '16px',
+        alignItems: 'stretch',
+      }}
+        className="comparison-grid"
+      >
+        <style>{`
         @media (max-width: 900px) {
           .comparison-grid { flex-direction: column !important; }
         }
       `}</style>
 
-      <ResponsePane
-        type="standard"
-        title="Context Rot"
-        subtitle="No retrieved context"
-        icon={AlertTriangle}
-        response={standard}
-        loading={loadingStandard}
-      />
-      <ResponsePane
-        type="rag"
-        title="RAG Optimized"
-        subtitle="With retrieved context"
-        icon={Zap}
-        response={rag}
-        loading={loadingRag}
-        sources={sources}
-        showSources={true}
-      />
+        <ResponsePane
+          type="standard"
+          title="Context Rot"
+          subtitle="No retrieved context"
+          icon={AlertTriangle}
+          response={standard}
+          loading={loadingStandard}
+        />
+        <ResponsePane
+          type="rag"
+          title="RAG Optimized"
+          subtitle="With retrieved context"
+          icon={Zap}
+          response={rag}
+          loading={loadingRag}
+          sources={sources}
+          showSources={true}
+        />
+      </div>
     </div>
   );
 }
