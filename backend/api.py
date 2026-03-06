@@ -189,40 +189,23 @@ async def upload_file(file: UploadFile = File(...)):
 # QUERY ENDPOINT - Dual Path (Standard vs RAG)
 # ============================================================================
 
-@app.post("/query")
-async def handle_query(request: QueryRequest):
+@app.post("/query/standard")
+async def handle_query_standard(request: QueryRequest):
     """
-    Dual-path query — honest Context Rot demonstration.
-
-    Both paths use the SAME model (gemini-2.5-flash).
-    The ONLY variable is how much context is given:
-
-      Standard (Context Rot):
-        - Entire document dumped into the prompt verbatim
-        - Tokens: 50k–500k+, latency 5–30s, cost ~$0.01+
-        - With large docs: model gets 'lost in the middle'
-
-      RAG (Optimized):
-        - Only top-3 semantically retrieved chunks sent
-        - Tokens: ~600, latency ~1s, cost ~$0.00005
-        - Always precise, regardless of document size
+    Standard path (Context Rot) endpoint.
+    Retrieves the entire document and stuffs it into the prompt.
     """
     try:
         user_query = request.user_query.strip()
         if not user_query:
             raise ValueError("Query cannot be empty")
 
-        logger.info(f"Processing query: {user_query[:100]}...")
+        logger.info(f"Processing Standard query: {user_query[:100]}...")
 
-        # ── PATH A: STANDARD (Context Rot) ────────────────────────────────────
-        # Naive approach: concatenate every chunk and send the whole document.
         all_chunks = store.get_all_texts()
         entire_document = "\n\n".join(all_chunks) if all_chunks else "(No document uploaded)"
 
         # 🚨 FREE TIER LIMIT: Gemini free tier has a 250,000 token-per-minute limit.
-        # War & Peace is ~800,000 tokens, which instantly triggers a 429 Quota Exceeded error.
-        # We cap the naive document dump to ~150,000 tokens (approx 600,000 characters)
-        # to ensure it successfully runs and demonstrates the performance difference.
         _MAX_CHARS_FREE_TIER = 600000
         if len(entire_document) > _MAX_CHARS_FREE_TIER:
             entire_document = entire_document[:_MAX_CHARS_FREE_TIER] + "\n\n...[DOCUMENT TRUNCATED DUE TO 250K API TOKEN LIMIT]"
@@ -241,8 +224,35 @@ Answer:"""
             f"{len(entire_document)} chars, model=gemini-2.5-flash"
         )
 
-        # ── PATH B: RAG (Optimized) ────────────────────────────────────────────
-        # Retrieve only the 5 most semantically relevant chunks.
+        return {
+            "status": "success",
+            "query": user_query,
+            "total_chunks": len(all_chunks),
+            "response": {
+                "text": standard_result.get('response', ''),
+                "model": standard_result.get('model', 'gemini-2.5-flash'),
+                "latency_ms": standard_result.get('latency_ms', 0),
+                "tokens_used": standard_result.get('tokens_used', {})
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Standard Query error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/query/rag")
+async def handle_query_rag(request: QueryRequest):
+    """
+    RAG path (Optimized) endpoint.
+    Retrieves only the top-5 semantically relevant chunks.
+    """
+    try:
+        user_query = request.user_query.strip()
+        if not user_query:
+            raise ValueError("Query cannot be empty")
+
+        logger.info(f"Processing RAG query: {user_query[:100]}...")
+
         retrieved_chunks = retriever.retrieve(user_query, k=5)
         context = (
             "\n\n".join([chunk['text'] for chunk in retrieved_chunks])
@@ -265,28 +275,19 @@ Answer:"""
         return {
             "status": "success",
             "query": user_query,
-            "total_chunks": len(all_chunks),
             "retrieved_chunks_count": len(retrieved_chunks),
-            "responses": {
-                "standard": {
-                    "text": standard_result.get('response', ''),
-                    "model": standard_result.get('model', 'gemini-2.5-flash'),
-                    "latency_ms": standard_result.get('latency_ms', 0),
-                    "tokens_used": standard_result.get('tokens_used', {})
-                },
-                "rag": {
-                    "text": rag_result.get('response', ''),
-                    "model": rag_result.get('model', 'gemini-2.5-flash'),
-                    "latency_ms": rag_result.get('latency_ms', 0),
-                    "tokens_used": rag_result.get('tokens_used', {}),
-                    "context_used": context[:500] + "..." if len(context) > 500 else context
-                }
+            "response": {
+                "text": rag_result.get('response', ''),
+                "model": rag_result.get('model', 'gemini-2.5-flash'),
+                "latency_ms": rag_result.get('latency_ms', 0),
+                "tokens_used": rag_result.get('tokens_used', {}),
+                "context_used": context[:500] + "..." if len(context) > 500 else context
             },
             "sources": [chunk.get('text', '')[:100] + "..." for chunk in retrieved_chunks[:3]]
         }
 
     except Exception as e:
-        logger.error(f"Query error: {str(e)}")
+        logger.error(f"RAG Query error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
 # ============================================================================

@@ -271,7 +271,7 @@ function ResponsePane({ type, title, subtitle, icon: Icon, response, loading, so
 }
 
 /* ── Public export ── */
-export default function ComparisonView({ standard, rag, loading, sources = [] }) {
+export default function ComparisonView({ standard, rag, loadingStandard, loadingRag, sources = [] }) {
   return (
     <div style={{
       display: 'flex',
@@ -292,7 +292,7 @@ export default function ComparisonView({ standard, rag, loading, sources = [] })
         subtitle="No retrieved context"
         icon={AlertTriangle}
         response={standard}
-        loading={loading}
+        loading={loadingStandard}
       />
       <ResponsePane
         type="rag"
@@ -300,7 +300,7 @@ export default function ComparisonView({ standard, rag, loading, sources = [] })
         subtitle="With retrieved context"
         icon={Zap}
         response={rag}
-        loading={loading}
+        loading={loadingRag}
         sources={sources}
         showSources={true}
       />

@@ -45,7 +45,8 @@ function StepLabel({ number, label, active }) {
 
 export default function App() {
   const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loadingStandard, setLoadingStandard] = useState(false);
+  const [loadingRag, setLoadingRag] = useState(false);
   const [error, setError] = useState('');
   const [responses, setResponses] = useState({ standard: null, rag: null });
   const [sources, setSources] = useState([]);
@@ -60,38 +61,39 @@ export default function App() {
     e.preventDefault();
     if (!query.trim()) { setError('Please enter a question'); return; }
 
-    setLoading(true);
+    setLoadingStandard(true);
+    setLoadingRag(true);
     setError('');
     setResponses({ standard: null, rag: null });
     setSources([]);
 
-    try {
-      const { data } = await axios.post(`${API_BASE}/query`, { user_query: query });
+    // Independent fetch for Standard path
+    axios.post(`${API_BASE}/query/standard`, { user_query: query })
+      .then(({ data }) => {
+        if (data.status !== 'success') throw new Error(data.detail || 'Standard query failed');
+        setResponses(prev => ({ ...prev, standard: data.response }));
+      })
+      .catch(err => {
+        const message = err?.response?.data?.detail || err.message || 'Error occurred';
+        setResponses(prev => ({ ...prev, standard: { text: `Error: ${message}` } }));
+      })
+      .finally(() => setLoadingStandard(false));
 
-      if (data.status !== 'success') throw new Error(data.detail || 'Query failed');
-
-      setResponses({
-        standard: data.responses?.standard || { text: 'No response available' },
-        rag: data.responses?.rag || { text: 'No response available' },
-      });
-
-      if (data.sources && Array.isArray(data.sources)) {
-        setSources(data.sources);
-      } else if (data.responses?.rag?.sources) {
-        setSources(data.responses.rag.sources);
-      }
-    } catch (err) {
-      const message = err?.response?.data?.detail
-        || err?.response?.data?.message
-        || err.message
-        || 'An error occurred while processing your query';
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
+    // Independent fetch for RAG path
+    axios.post(`${API_BASE}/query/rag`, { user_query: query })
+      .then(({ data }) => {
+        if (data.status !== 'success') throw new Error(data.detail || 'RAG query failed');
+        setResponses(prev => ({ ...prev, rag: data.response }));
+        if (data.sources) setSources(data.sources);
+      })
+      .catch(err => {
+        const message = err?.response?.data?.detail || err.message || 'Error occurred';
+        setResponses(prev => ({ ...prev, rag: { text: `Error: ${message}` } }));
+      })
+      .finally(() => setLoadingRag(false));
   };
 
-  const hasResults = responses.standard || responses.rag || loading;
+  const hasResults = responses.standard || responses.rag || loadingStandard || loadingRag;
 
   return (
     <div className="bg-radial-glow" style={{ minHeight: '100vh' }}>
@@ -141,7 +143,7 @@ export default function App() {
             value={query}
             onChange={setQuery}
             onSubmit={handleQuery}
-            loading={loading}
+            loading={loadingStandard || loadingRag}
           />
 
           {error && (
@@ -170,7 +172,8 @@ export default function App() {
             <ComparisonView
               standard={responses.standard}
               rag={responses.rag}
-              loading={loading}
+              loadingStandard={loadingStandard}
+              loadingRag={loadingRag}
               sources={sources}
             />
           ) : (
