@@ -71,8 +71,8 @@ llm = LLMInference(
     config=gemini_cfg
 )
 
-retriever = SemanticRetriever(store, gen, top_k=3)
-chunker = TextChunker(chunk_size=512, overlap=50)
+retriever = SemanticRetriever(store, gen, top_k=5)
+chunker = TextChunker(chunk_size=1024, overlap=150)
 
 # Load existing index if it exists
 INDEX_PATH = "memory_index"
@@ -242,8 +242,8 @@ Answer:"""
         )
 
         # ── PATH B: RAG (Optimized) ────────────────────────────────────────────
-        # Retrieve only the 3 most semantically relevant chunks.
-        retrieved_chunks = retriever.retrieve(user_query, k=3)
+        # Retrieve only the 5 most semantically relevant chunks.
+        retrieved_chunks = retriever.retrieve(user_query, k=5)
         context = (
             "\n\n".join([chunk['text'] for chunk in retrieved_chunks])
             if retrieved_chunks else "(No context retrieved)"
