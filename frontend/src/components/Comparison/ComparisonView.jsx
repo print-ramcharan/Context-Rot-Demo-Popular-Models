@@ -1,156 +1,268 @@
-import React from 'react';
-import { AlertTriangle, Zap, BookOpen, Clock, Cpu } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { AlertTriangle, Zap, BookOpen, Clock, Cpu, ChevronDown } from 'lucide-react';
 
-// Skeleton loading component
-function SkeletonPane() {
+/* ── Skeleton row ── */
+function SkeletonRow({ width = '100%', delay = 0 }) {
   return (
-    <div className="space-y-3 animate-in fade-in duration-300">
-      <div className="h-4 w-3/4 rounded-lg bg-[#1a1a1a] animate-pulse" />
-      <div className="h-4 w-full rounded-lg bg-[#1a1a1a] animate-pulse" style={{ animationDelay: '75ms' }} />
-      <div className="h-4 w-5/6 rounded-lg bg-[#1a1a1a] animate-pulse" style={{ animationDelay: '150ms' }} />
-      <div className="h-4 w-4/5 rounded-lg bg-[#1a1a1a] animate-pulse" style={{ animationDelay: '225ms' }} />
-      <div className="h-4 w-2/3 rounded-lg bg-[#1a1a1a] animate-pulse" style={{ animationDelay: '300ms' }} />
-      <div className="h-4 w-3/5 rounded-lg bg-[#1a1a1a] animate-pulse" style={{ animationDelay: '375ms' }} />
-    </div>
+    <div className="skeleton" style={{
+      height: '14px',
+      width,
+      marginBottom: '10px',
+      animationDelay: `${delay}ms`,
+    }} />
   );
 }
 
-// Response pane component
-function ResponsePane({ 
-  type, 
-  title, 
-  icon: Icon, 
-  accentColor, 
-  response, 
-  loading, 
-  sources = [],
-  showSources = false 
-}) {
-  const isStandard = type === 'standard';
-  
+/* ── Streaming text that reveals word-by-word ── */
+function StreamingText({ text }) {
+  const [displayed, setDisplayed] = useState('');
+
+  useEffect(() => {
+    if (!text) return;
+    setDisplayed('');
+    const words = text.split(' ');
+    let idx = 0;
+    const interval = setInterval(() => {
+      idx++;
+      setDisplayed(words.slice(0, idx).join(' '));
+      if (idx >= words.length) clearInterval(interval);
+    }, 18);
+    return () => clearInterval(interval);
+  }, [text]);
+
   return (
-    <div className={`
-      group relative overflow-hidden rounded-2xl border-2 transition-all duration-300
-      ${isStandard 
-        ? 'border-red-500/20 bg-gradient-to-br from-red-500/5 to-red-600/5 hover:border-red-500/30' 
-        : 'border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-emerald-600/5 hover:border-emerald-500/30'
-      }
-    `}>
-      {/* Gradient overlay */}
-      <div className={`absolute inset-0 bg-gradient-to-br opacity-0 transition-opacity group-hover:opacity-100 ${
-        isStandard ? 'from-red-500/5 to-transparent' : 'from-emerald-500/5 to-transparent'
-      }`} />
+    <p style={{
+      fontSize: '13.5px',
+      lineHeight: '1.75',
+      color: 'var(--text-secondary)',
+      whiteSpace: 'pre-wrap',
+      fontFamily: 'inherit',
+    }}>
+      {displayed}
+      {displayed.length < text.length && (
+        <span style={{
+          display: 'inline-block',
+          width: '2px', height: '14px',
+          background: 'var(--purple-400)',
+          marginLeft: '2px',
+          verticalAlign: 'text-bottom',
+          animation: 'pulseDot 0.8s ease-in-out infinite',
+        }} />
+      )}
+    </p>
+  );
+}
 
-      <div className="relative space-y-6 p-6">
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`rounded-xl border p-2.5 ${
-              isStandard 
-                ? 'border-red-500/30 bg-red-500/10' 
-                : 'border-emerald-500/30 bg-emerald-500/10'
-            }`}>
-              <Icon className={`h-5 w-5 ${isStandard ? 'text-red-400' : 'text-emerald-400'}`} />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-white">{title}</h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {isStandard ? 'No retrieved context' : 'With retrieved context'}
-              </p>
-            </div>
+/* ── Meta chip ── */
+function MetaChip({ icon: Icon, label }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '5px',
+      padding: '3px 8px',
+      borderRadius: '6px',
+      border: '1px solid var(--border)',
+      background: 'var(--bg-base)',
+      fontSize: '11px',
+      color: 'var(--text-muted)',
+      fontFamily: "'JetBrains Mono', monospace",
+    }}>
+      <Icon size={11} />
+      {label}
+    </span>
+  );
+}
+
+/* ── Single response panel ── */
+function ResponsePane({ type, title, subtitle, icon: Icon, response, loading, sources = [], showSources }) {
+  const isStandard = type === 'standard';
+  const [contextOpen, setContextOpen] = useState(false);
+
+  const accentColor = isStandard ? 'var(--red-400)' : 'var(--emerald-400)';
+  const accentBg = isStandard ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)';
+  const accentBorder = isStandard ? 'rgba(239,68,68,0.22)' : 'rgba(16,185,129,0.22)';
+  const badgeLabel = isStandard ? 'Degraded' : 'Enhanced';
+
+  return (
+    <div className="animate-fade-up" style={{
+      flex: 1,
+      minWidth: 0,
+      borderRadius: '14px',
+      border: `1px solid ${accentBorder}`,
+      background: 'var(--bg-surface)',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+      boxShadow: `0 2px 12px ${isStandard ? 'rgba(239,68,68,0.06)' : 'rgba(16,185,129,0.06)'}`,
+    }}>
+
+      {/* Panel header */}
+      <div style={{
+        padding: '16px 20px',
+        borderBottom: `1px solid ${accentBorder}`,
+        background: accentBg,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '32px', height: '32px',
+            borderRadius: '8px',
+            border: `1px solid ${accentBorder}`,
+            background: isStandard ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Icon size={15} style={{ color: accentColor }} />
           </div>
-
-          {/* Status badge */}
-          {!loading && response && (
-            <div className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
-              isStandard 
-                ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
-                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-            }`}>
-              {isStandard ? 'Limited' : 'Enhanced'}
-            </div>
-          )}
+          <div>
+            <h3 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+              {title}
+            </h3>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>{subtitle}</p>
+          </div>
         </div>
 
-        {/* Response Text */}
-        <div className="min-h-[200px] rounded-xl border border-[#1a1a1a] bg-[#0b0b0b] p-5">
+        {!loading && response && (
+          <span style={{
+            padding: '3px 10px',
+            borderRadius: '20px',
+            fontSize: '10px',
+            fontWeight: 700,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            color: accentColor,
+            border: `1px solid ${accentBorder}`,
+            background: accentBg,
+          }}>
+            {badgeLabel}
+          </span>
+        )}
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: '20px', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+        {/* Response text box */}
+        <div style={{
+          minHeight: '180px',
+          borderRadius: '10px',
+          border: '1px solid var(--border)',
+          background: 'var(--bg-card)',
+          padding: '16px',
+          flex: 1,
+        }}>
           {loading ? (
-            <SkeletonPane />
+            <>
+              <SkeletonRow width="72%" delay={0} />
+              <SkeletonRow width="100%" delay={80} />
+              <SkeletonRow width="88%" delay={160} />
+              <SkeletonRow width="95%" delay={240} />
+              <SkeletonRow width="60%" delay={320} />
+            </>
           ) : response?.text ? (
-            <p className="text-sm leading-relaxed text-gray-300 whitespace-pre-wrap">
-              {response.text}
-            </p>
+            <StreamingText text={response.text} />
           ) : (
-            <p className="text-sm text-gray-500 italic">
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
               No response yet. Upload a document and ask a question.
             </p>
           )}
         </div>
 
-        {/* Context Section (RAG only) */}
+        {/* Retrieved context (RAG only) */}
         {!isStandard && response?.context_used && (
-          <details className="group/details overflow-hidden rounded-xl border border-emerald-500/20 bg-emerald-500/5 transition-all">
-            <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <BookOpen className="h-3.5 w-3.5" />
-                View Retrieved Context
+          <div style={{
+            borderRadius: '10px',
+            border: '1px solid rgba(16,185,129,0.2)',
+            overflow: 'hidden',
+          }}>
+            <button
+              onClick={() => setContextOpen(o => !o)}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: 'rgba(16,185,129,0.06)',
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: 'var(--emerald-400)' }}>
+                <BookOpen size={13} />
+                Retrieved Context
               </span>
-              <span className="text-gray-500 group-open/details:rotate-180 transition-transform">▼</span>
-            </summary>
-            <div className="border-t border-emerald-500/20 bg-[#0b0b0b] p-4">
-              <pre className="text-xs text-gray-400 whitespace-pre-wrap font-mono">
-                {response.context_used}
-              </pre>
-            </div>
-          </details>
+              <ChevronDown size={13} style={{
+                color: 'var(--text-muted)',
+                transform: contextOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease',
+              }} />
+            </button>
+            {contextOpen && (
+              <div style={{
+                padding: '12px 14px',
+                borderTop: '1px solid rgba(16,185,129,0.15)',
+                background: 'var(--bg-card)',
+              }}>
+                <pre style={{
+                  fontSize: '11.5px',
+                  color: 'var(--text-secondary)',
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  lineHeight: '1.7',
+                }}>
+                  {response.context_used}
+                </pre>
+              </div>
+            )}
+          </div>
         )}
 
-        {/* Source Citations (RAG only) */}
+        {/* Sources (RAG only) */}
         {showSources && sources.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
-              <div className="h-px flex-1 bg-emerald-500/20" />
-              <span className="flex items-center gap-2">
-                <BookOpen className="h-3.5 w-3.5" />
-                Source Citations
-              </span>
-              <div className="h-px flex-1 bg-emerald-500/20" />
-            </div>
-
-            <ul className="space-y-2">
+          <div>
+            <p style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Source Citations
+            </p>
+            <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {sources.map((source, i) => (
-                <li 
-                  key={i}
-                  className="flex items-start gap-3 rounded-lg border border-[#1a1a1a] bg-[#0b0b0b] p-3 text-xs transition-colors hover:border-emerald-500/20 hover:bg-emerald-500/5"
-                >
-                  <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-[10px] font-bold text-emerald-400">
+                <li key={i} style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '10px',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border)',
+                  background: 'var(--bg-card)',
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)',
+                  lineHeight: '1.6',
+                }}>
+                  <span style={{
+                    flexShrink: 0,
+                    width: '18px', height: '18px',
+                    borderRadius: '4px',
+                    background: 'rgba(16,185,129,0.12)',
+                    color: 'var(--emerald-400)',
+                    fontSize: '10px', fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}>
                     {i + 1}
                   </span>
-                  <span className="text-gray-400 leading-relaxed">
-                    {source}
-                  </span>
+                  {source}
                 </li>
               ))}
             </ul>
           </div>
         )}
 
-        {/* Metadata */}
+        {/* Metadata row */}
         {response && (
-          <div className="flex flex-wrap items-center gap-4 border-t border-[#1a1a1a] pt-4 text-[11px]">
-            <div className="flex items-center gap-1.5 text-gray-500">
-              <Cpu className="h-3.5 w-3.5" />
-              <span className="font-mono">{response.model || 'gemini'}</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-gray-500">
-              <Clock className="h-3.5 w-3.5" />
-              <span className="font-mono">{response.latency_ms?.toFixed?.(0) || 0}ms</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-gray-500">
-              <span className="font-mono">
-                {response.tokens_used?.total || 0} tokens
-              </span>
-            </div>
+          <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: '6px',
+            paddingTop: '12px',
+            borderTop: '1px solid var(--border)',
+          }}>
+            <MetaChip icon={Cpu} label={response.model || 'gemini'} />
+            <MetaChip icon={Clock} label={`${response.latency_ms?.toFixed?.(0) || 0} ms`} />
+            <MetaChip icon={() => <span style={{ fontSize: '10px' }}>T</span>}
+              label={`${response.tokens_used?.total || 0} tokens`} />
           </div>
         )}
       </div>
@@ -158,25 +270,35 @@ function ResponsePane({
   );
 }
 
+/* ── Public export ── */
 export default function ComparisonView({ standard, rag, loading, sources = [] }) {
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      {/* Standard LLM Response */}
+    <div style={{
+      display: 'flex',
+      gap: '16px',
+      alignItems: 'stretch',
+    }}
+      className="comparison-grid"
+    >
+      <style>{`
+        @media (max-width: 900px) {
+          .comparison-grid { flex-direction: column !important; }
+        }
+      `}</style>
+
       <ResponsePane
         type="standard"
-        title="Context Rot (Standard)"
+        title="Context Rot"
+        subtitle="No retrieved context"
         icon={AlertTriangle}
-        accentColor="red"
         response={standard}
         loading={loading}
       />
-
-      {/* RAG Response */}
       <ResponsePane
         type="rag"
         title="RAG Optimized"
+        subtitle="With retrieved context"
         icon={Zap}
-        accentColor="emerald"
         response={rag}
         loading={loading}
         sources={sources}

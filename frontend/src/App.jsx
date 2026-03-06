@@ -8,33 +8,57 @@ import { AlertCircle } from 'lucide-react';
 
 const API_BASE = 'http://127.0.0.1:8000';
 
+/* ── Step label ── */
+function StepLabel({ number, label, active }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+      <span style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: '11px',
+        fontWeight: 500,
+        color: active ? 'var(--purple-400)' : 'var(--text-muted)',
+        letterSpacing: '0.08em',
+        transition: 'color 0.3s ease',
+        userSelect: 'none',
+      }}>
+        0{number}
+      </span>
+      <div style={{
+        height: '1px',
+        width: '24px',
+        background: active ? 'var(--purple-500)' : 'var(--border)',
+        transition: 'background 0.3s ease',
+      }} />
+      <span style={{
+        fontSize: '12px',
+        fontWeight: 600,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+        color: active ? 'var(--text-secondary)' : 'var(--text-muted)',
+        transition: 'color 0.3s ease',
+      }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 export default function App() {
-  // State management
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [responses, setResponses] = useState({ 
-    standard: null, 
-    rag: null 
-  });
+  const [responses, setResponses] = useState({ standard: null, rag: null });
   const [sources, setSources] = useState([]);
   const [documentUploaded, setDocumentUploaded] = useState(false);
 
-  // Handle file upload success
   const handleFileUpload = (file) => {
-    console.log('Document uploaded:', file.name);
     setDocumentUploaded(true);
-    setError(''); // Clear any previous errors
+    setError('');
   };
 
-  // Handle query submission
   const handleQuery = async (e) => {
     e.preventDefault();
-    
-    if (!query.trim()) {
-      setError('Please enter a question');
-      return;
-    }
+    if (!query.trim()) { setError('Please enter a question'); return; }
 
     setLoading(true);
     setError('');
@@ -42,34 +66,24 @@ export default function App() {
     setSources([]);
 
     try {
-      const { data } = await axios.post(`${API_BASE}/query`, {
-        user_query: query,
-      });
+      const { data } = await axios.post(`${API_BASE}/query`, { user_query: query });
 
-      console.log('Query response:', data);
+      if (data.status !== 'success') throw new Error(data.detail || 'Query failed');
 
-      if (data.status !== 'success') {
-        throw new Error(data.detail || 'Query failed');
-      }
-
-      // Set responses
       setResponses({
         standard: data.responses?.standard || { text: 'No response available' },
         rag: data.responses?.rag || { text: 'No response available' },
       });
 
-      // Set sources if available
       if (data.sources && Array.isArray(data.sources)) {
         setSources(data.sources);
       } else if (data.responses?.rag?.sources) {
         setSources(data.responses.rag.sources);
       }
-
     } catch (err) {
-      console.error('Query error:', err);
-      const message = err?.response?.data?.detail 
-        || err?.response?.data?.message 
-        || err.message 
+      const message = err?.response?.data?.detail
+        || err?.response?.data?.message
+        || err.message
         || 'An error occurred while processing your query';
       setError(message);
     } finally {
@@ -77,42 +91,52 @@ export default function App() {
     }
   };
 
+  const hasResults = responses.standard || responses.rag || loading;
+
   return (
-    <div className="min-h-screen bg-[#050505] text-white">
+    <div className="bg-radial-glow" style={{ minHeight: '100vh' }}>
       <Header />
 
-      <main className="mx-auto max-w-7xl px-6 py-12 space-y-12">
-        
-        {/* Step 1: Upload */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-sm font-bold text-emerald-400">
-              1
-            </div>
-            <h2 className="text-sm font-bold tracking-wide text-gray-300 uppercase">
-              Upload Document Sources
-            </h2>
-          </div>
+      <main style={{
+        maxWidth: '1100px',
+        margin: '0 auto',
+        padding: '48px 24px 80px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '48px',
+      }}>
+
+        {/* ── Hero intro ── */}
+        <div className="animate-fade-up" style={{ textAlign: 'center', maxWidth: '620px', margin: '0 auto' }}>
+          <h2 style={{
+            fontSize: 'clamp(26px, 4vw, 38px)',
+            fontWeight: 800,
+            letterSpacing: '-0.03em',
+            lineHeight: 1.2,
+            marginBottom: '14px',
+          }}>
+            <span className="gradient-text">Context Rot</span>
+            {' '}vs RAG
+          </h2>
+          <p style={{
+            fontSize: '15px',
+            color: 'var(--text-secondary)',
+            lineHeight: '1.7',
+          }}>
+            Upload a document, ask a question, and observe how context degradation
+            impacts standard LLM responses — compared against retrieval-augmented generation.
+          </p>
+        </div>
+
+        {/* ── Step 1: Upload ── */}
+        <section className="animate-fade-up" style={{ animationDelay: '80ms' }}>
+          <StepLabel number={1} label="Upload Document" active={true} />
           <FileDropzone onUpload={handleFileUpload} />
         </section>
 
-        {/* Step 2: Query */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className={`flex h-8 w-8 items-center justify-center rounded-lg border text-sm font-bold transition-colors ${
-              documentUploaded 
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                : 'border-[#1a1a1a] bg-[#0b0b0b] text-gray-600'
-            }`}>
-              2
-            </div>
-            <h2 className={`text-sm font-bold tracking-wide uppercase transition-colors ${
-              documentUploaded ? 'text-gray-300' : 'text-gray-600'
-            }`}>
-              Ask Your Question
-            </h2>
-          </div>
-          
+        {/* ── Step 2: Query ── */}
+        <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
+          <StepLabel number={2} label="Ask a Question" active={documentUploaded} />
           <QueryBar
             value={query}
             onChange={setQuery}
@@ -120,38 +144,29 @@ export default function App() {
             loading={loading}
           />
 
-          {/* Error Display */}
           {error && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-400 mt-0.5" />
-                <div>
-                  <h4 className="text-sm font-semibold text-red-300">Error</h4>
-                  <p className="mt-1 text-sm text-red-200/80">{error}</p>
-                </div>
+            <div className="animate-fade-in" style={{
+              marginTop: '12px',
+              display: 'flex', alignItems: 'flex-start', gap: '10px',
+              padding: '14px 16px',
+              borderRadius: '10px',
+              border: '1px solid rgba(239,68,68,0.3)',
+              background: 'rgba(239,68,68,0.06)',
+            }}>
+              <AlertCircle size={16} style={{ color: 'var(--red-400)', flexShrink: 0, marginTop: '1px' }} />
+              <div>
+                <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--red-400)', marginBottom: '2px' }}>Error</p>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{error}</p>
               </div>
             </div>
           )}
         </section>
 
-        {/* Step 3: Results */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className={`flex h-8 w-8 items-center justify-center rounded-lg border text-sm font-bold transition-colors ${
-              responses.standard || responses.rag || loading
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                : 'border-[#1a1a1a] bg-[#0b0b0b] text-gray-600'
-            }`}>
-              3
-            </div>
-            <h2 className={`text-sm font-bold tracking-wide uppercase transition-colors ${
-              responses.standard || responses.rag || loading ? 'text-gray-300' : 'text-gray-600'
-            }`}>
-              Compare Responses
-            </h2>
-          </div>
+        {/* ── Step 3: Results ── */}
+        <section className="animate-fade-up" style={{ animationDelay: '240ms' }}>
+          <StepLabel number={3} label="Compare Responses" active={!!hasResults} />
 
-          {(loading || responses.standard || responses.rag) ? (
+          {hasResults ? (
             <ComparisonView
               standard={responses.standard}
               rag={responses.rag}
@@ -159,31 +174,42 @@ export default function App() {
               sources={sources}
             />
           ) : (
-            <div className="rounded-2xl border-2 border-dashed border-[#1a1a1a] bg-[#0b0b0b] px-6 py-16 text-center">
-              <p className="text-sm text-gray-500">
-                Upload a document and ask a question to see the comparison
+            <div style={{
+              borderRadius: '14px',
+              border: '2px dashed var(--border)',
+              padding: '56px 24px',
+              textAlign: 'center',
+              background: 'var(--bg-surface)',
+            }}>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                Results will appear here after you upload a document and submit a query.
               </p>
             </div>
           )}
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-[#1a1a1a] py-6">
-        <div className="mx-auto max-w-7xl px-6 text-center text-xs text-gray-500">
-          <p>
-            Built with React · FastAPI · Gemini · FAISS
-            <span className="mx-2">·</span>
-            <a 
-              href="https://github.com" 
-              className="text-emerald-400 hover:text-emerald-300 transition-colors"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View Source
-            </a>
-          </p>
-        </div>
+      {/* ── Footer ── */}
+      <footer style={{
+        borderTop: '1px solid var(--border)',
+        padding: '20px 24px',
+        textAlign: 'center',
+      }}>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+          Built with{' '}
+          {['React', 'FastAPI', 'Gemini', 'FAISS'].map((t, i) => (
+            <span key={t}>
+              {i > 0 && <span style={{ margin: '0 6px', opacity: 0.4 }}>·</span>}
+              <span style={{
+                padding: '2px 7px', borderRadius: '5px',
+                border: '1px solid var(--border)',
+                background: 'var(--bg-surface)',
+                fontSize: '11px',
+                fontFamily: "'JetBrains Mono', monospace",
+              }}>{t}</span>
+            </span>
+          ))}
+        </p>
       </footer>
     </div>
   );
