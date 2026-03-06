@@ -10,3 +10,4 @@ backend/.env
 node_modules/
 dist/
 coverage/
+demo-documents/*.txt
