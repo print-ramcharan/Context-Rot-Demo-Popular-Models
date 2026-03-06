@@ -219,6 +219,14 @@ async def handle_query(request: QueryRequest):
         all_chunks = store.get_all_texts()
         entire_document = "\n\n".join(all_chunks) if all_chunks else "(No document uploaded)"
 
+        # 🚨 FREE TIER LIMIT: Gemini free tier has a 250,000 token-per-minute limit.
+        # War & Peace is ~800,000 tokens, which instantly triggers a 429 Quota Exceeded error.
+        # We cap the naive document dump to ~150,000 tokens (approx 600,000 characters)
+        # to ensure it successfully runs and demonstrates the performance difference.
+        _MAX_CHARS_FREE_TIER = 600000
+        if len(entire_document) > _MAX_CHARS_FREE_TIER:
+            entire_document = entire_document[:_MAX_CHARS_FREE_TIER] + "\n\n...[DOCUMENT TRUNCATED DUE TO 250K API TOKEN LIMIT]"
+
         standard_prompt = f"""You are given the complete text of a document. Read it and answer the question below.
 
 {entire_document}
