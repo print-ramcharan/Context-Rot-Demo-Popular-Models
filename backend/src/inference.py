@@ -132,7 +132,7 @@ class LLMInference:
                     "Gemini API key not found. Please set 'api_key' in config.yaml "
                     "or set the GEMINI_API_KEY or GOOGLE_API_KEY environment variable in your .env file."
                 )
-            genai.configure(api_key=api_key)
+            genai.configure(api_key=api_key.strip())
             self.client = genai.GenerativeModel(self.model)
         except ImportError:
             raise RuntimeError("Install with: pip install google-generativeai python-dotenv")
