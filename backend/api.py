@@ -235,7 +235,7 @@ Question: {user_query}
 
 Answer:"""
 
-        standard_result = llm.generate(standard_prompt, max_tokens=500, temperature=0.7)
+        standard_result = llm.generate(standard_prompt, max_tokens=2000, temperature=0.7)
         logger.info(
             f"Standard: {len(all_chunks)} chunks, "
             f"{len(entire_document)} chars, model=gemini-2.5-flash"
@@ -259,7 +259,7 @@ Question: {user_query}
 
 Answer:"""
 
-        rag_result = llm.generate(rag_prompt, max_tokens=500, temperature=0.7)
+        rag_result = llm.generate(rag_prompt, max_tokens=2000, temperature=0.7)
         logger.info(f"RAG: {len(retrieved_chunks)} chunks retrieved, model=gemini-2.5-flash")
 
         return {
