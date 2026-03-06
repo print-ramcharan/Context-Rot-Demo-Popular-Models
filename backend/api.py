@@ -58,19 +58,14 @@ llm_cfg = config.get('llm', {})
 gemini_cfg = llm_cfg.get('gemini', {})
 
 # ── Initialize AI Components ──────────────────────────────────────────────────
-store = VectorStore(dimension=384)  # Dimension for MiniLM
+store = VectorStore(dimension=384)
 gen = EmbeddingGenerator()
 
-# Standard path: weaker model (gemini-1.5-flash-8b) deliberately chosen to
-# show context rot — it has limited reasoning capacity over noisy long contexts.
-standard_llm = LLMInference(
-    provider="gemini",
-    model="gemini-1.5-flash-8b",
-    config=gemini_cfg
-)
-
-# RAG path: stronger model (gemini-2.5-flash) with clean, retrieved context.
-rag_llm = LLMInference(
+# Single model used for BOTH paths — the only variable is the context strategy:
+#   Standard: dumps the entire document (naive full-context stuffing)
+#   RAG:      retrieves only the 3 most relevant chunks via semantic search
+# This is a pure, honest comparison of retrieval strategy vs brute-force context.
+llm = LLMInference(
     provider="gemini",
     model="gemini-2.5-flash",
     config=gemini_cfg
@@ -191,77 +186,26 @@ async def upload_file(file: UploadFile = File(...)):
         )
 
 # ============================================================================
-# QUERY ENDPOINT - Dual Path (RAG + Standard)
+# QUERY ENDPOINT - Dual Path (Standard vs RAG)
 # ============================================================================
-
-# ── Context Rot: Noise Injection Helper ───────────────────────────────────────
-
-# Irrelevant filler paragraphs injected into the middle of the Standard path's
-# context. This simulates the "Lost in the Middle" effect documented in
-# Liu et al. (2023), causing the weaker model to lose track of the answer.
-_NOISE_PARAGRAPHS = [
-    "The annual migration of monarch butterflies spans thousands of miles across North America, following routes passed down through generations encoded in their genetic memory.",
-    "In classical thermodynamics, entropy is a measure of the number of microscopic configurations that correspond to a thermodynamic system's macroscopic state.",
-    "The construction of the Great Wall of China took place over many centuries, involving millions of workers during various dynasties, primarily as a military fortification.",
-    "Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to produce oxygen and energy in the form of glucose through chlorophyll.",
-    "The Silk Road was an ancient network of trade routes connecting the East and West, facilitating the exchange of goods, culture, and knowledge for centuries.",
-    "In computer science, a binary search tree is a rooted binary tree in which any node's value is greater than all values in its left subtree and less than all in its right.",
-    "Marine biologists have discovered that dolphins use a sophisticated system of clicks and whistles to communicate, with some researchers believing they possess individual names.",
-    "The Renaissance period marked a profound cultural and intellectual transformation in Europe, with artists and scholars drawing inspiration from classical Greek and Roman ideals.",
-    "Quantum entanglement occurs when two particles become correlated such that the quantum state of each particle cannot be described independently of the other, even when separated.",
-    "The Amazon rainforest produces approximately 20% of the world's oxygen and is home to an estimated 10% of all species living on Earth, making it critical to global biodiversity.",
-    "During the Industrial Revolution, the invention of the steam engine transformed manufacturing, transportation, and agriculture, fundamentally reshaping the global economy.",
-    "The human brain contains approximately 86 billion neurons, each forming thousands of synaptic connections, creating a network more complex than the entire known universe.",
-    "Plate tectonics theory explains how Earth's lithosphere is divided into large rigid plates that move relative to each other, causing earthquakes, volcanoes, and mountain formation.",
-    "Jazz music emerged in the early 20th century in New Orleans, blending African-American musical traditions with European harmonic structures to create a uniquely American art form.",
-    "The speed of light in a vacuum is exactly 299,792,458 metres per second, serving as a fundamental constant in physics and the universe's ultimate speed limit.",
-]
-
-def _inject_noise_into_context(chunks: list[str], noise_ratio: float = 0.6) -> str:
-    """
-    Builds a noisy context by interleaving real document chunks with irrelevant
-    noise paragraphs, then shuffling. This simulates context rot — the model
-    must find the answer buried in irrelevant text, degrading its performance.
-
-    noise_ratio: proportion of noise paragraphs relative to real chunks.
-    """
-    if not chunks:
-        return "(No document uploaded)"
-
-    n_noise = max(int(len(chunks) * noise_ratio), 8)
-    noise_sample = ((_NOISE_PARAGRAPHS * ((n_noise // len(_NOISE_PARAGRAPHS)) + 1))[:n_noise])
-
-    # Interleave: place noise between real chunks and also surround the answer area
-    combined = []
-    for i, chunk in enumerate(chunks):
-        # Inject 1–2 noise paragraphs before each real chunk
-        n_inject = random.randint(1, 2)
-        combined.extend(random.sample(noise_sample, min(n_inject, len(noise_sample))))
-        combined.append(chunk)
-
-    random.shuffle(noise_sample)  # Add trailing noise
-    combined.extend(noise_sample[:4])
-
-    return "\n\n".join(combined)
-
-
-# ── Query Endpoint ─────────────────────────────────────────────────────────────
 
 @app.post("/query")
 async def handle_query(request: QueryRequest):
     """
-    Dual-path query for Context Rot demonstration.
+    Dual-path query — honest Context Rot demonstration.
 
-    Standard path (Context Rot):
-      - Uses gemini-1.5-flash-8b (weaker, lower reasoning capacity)
-      - Receives ALL document chunks PLUS injected noise paragraphs
-      - Simulates 'Lost in the Middle': the model struggles to find the
-        answer buried in irrelevant text
+    Both paths use the SAME model (gemini-2.5-flash).
+    The ONLY variable is how much context is given:
 
-    RAG path (Optimized):
-      - Uses gemini-2.5-flash (stronger model)
-      - Receives ONLY the 3 most semantically relevant chunks
-      - Clean, precise context → accurate, fast answer
+      Standard (Context Rot):
+        - Entire document dumped into the prompt verbatim
+        - Tokens: 50k–500k+, latency 5–30s, cost ~$0.01+
+        - With large docs: model gets 'lost in the middle'
+
+      RAG (Optimized):
+        - Only top-3 semantically retrieved chunks sent
+        - Tokens: ~600, latency ~1s, cost ~$0.00005
+        - Always precise, regardless of document size
     """
     try:
         user_query = request.user_query.strip()
@@ -271,28 +215,26 @@ async def handle_query(request: QueryRequest):
         logger.info(f"Processing query: {user_query[:100]}...")
 
         # ── PATH A: STANDARD (Context Rot) ────────────────────────────────────
+        # Naive approach: concatenate every chunk and send the whole document.
         all_chunks = store.get_all_texts()
+        entire_document = "\n\n".join(all_chunks) if all_chunks else "(No document uploaded)"
 
-        # Build a noisy context: real chunks interleaved with irrelevant filler
-        noisy_context = _inject_noise_into_context(all_chunks, noise_ratio=0.8)
+        standard_prompt = f"""You are given the complete text of a document. Read it and answer the question below.
 
-        standard_prompt = f"""You are given a large document. Read it carefully and answer the question.
-
---- DOCUMENT START ---
-{noisy_context}
---- DOCUMENT END ---
+{entire_document}
 
 Question: {user_query}
 
-Answer based only on the document above:"""
+Answer:"""
 
-        standard_result = standard_llm.generate(standard_prompt, max_tokens=500, temperature=0.7)
+        standard_result = llm.generate(standard_prompt, max_tokens=500, temperature=0.7)
         logger.info(
-            f"Standard: {len(all_chunks)} real chunks + noise, "
-            f"{len(noisy_context)} chars, model=gemini-1.5-flash-8b"
+            f"Standard: {len(all_chunks)} chunks, "
+            f"{len(entire_document)} chars, model=gemini-2.5-flash"
         )
 
-        # ── PATH B: RAG (Optimized) ───────────────────────────────────────────
+        # ── PATH B: RAG (Optimized) ────────────────────────────────────────────
+        # Retrieve only the 3 most semantically relevant chunks.
         retrieved_chunks = retriever.retrieve(user_query, k=3)
         context = (
             "\n\n".join([chunk['text'] for chunk in retrieved_chunks])
@@ -309,8 +251,8 @@ Question: {user_query}
 
 Answer:"""
 
-        rag_result = rag_llm.generate(rag_prompt, max_tokens=500, temperature=0.3)
-        logger.info(f"RAG: {len(retrieved_chunks)} chunks, model=gemini-2.5-flash")
+        rag_result = llm.generate(rag_prompt, max_tokens=500, temperature=0.7)
+        logger.info(f"RAG: {len(retrieved_chunks)} chunks retrieved, model=gemini-2.5-flash")
 
         return {
             "status": "success",
@@ -320,7 +262,7 @@ Answer:"""
             "responses": {
                 "standard": {
                     "text": standard_result.get('response', ''),
-                    "model": standard_result.get('model', 'gemini-1.5-flash-8b'),
+                    "model": standard_result.get('model', 'gemini-2.5-flash'),
                     "latency_ms": standard_result.get('latency_ms', 0),
                     "tokens_used": standard_result.get('tokens_used', {})
                 },
