@@ -61,13 +61,18 @@ gemini_cfg = llm_cfg.get('gemini', {})
 store = VectorStore(dimension=384)
 gen = EmbeddingGenerator()
 
-# Single model used for BOTH paths — the only variable is the context strategy:
-#   Standard: dumps the entire document (naive full-context stuffing)
-#   RAG:      retrieves only the 3 most relevant chunks via semantic search
-# This is a pure, honest comparison of retrieval strategy vs brute-force context.
-llm = LLMInference(
+# Models for the comparison:
+#   Both use 2.5-flash to ensure quota availability and fair comparison.
+#   The difference is strictly the context management strategy (RAG vs Naive Full Context).
+llm_standard = LLMInference(
     provider="gemini",
-    model="gemini-2.5-flash",
+    model="models/gemini-2.5-flash",
+    config=gemini_cfg
+)
+
+llm_rag = LLMInference(
+    provider="gemini",
+    model="models/gemini-2.5-flash",
     config=gemini_cfg
 )
 
@@ -193,7 +198,7 @@ async def upload_file(file: UploadFile = File(...)):
 async def handle_query_standard(request: QueryRequest):
     """
     Standard path (Context Rot) endpoint.
-    Retrieves the entire document and stuffs it into the prompt.
+    Retrieves the entire document and injects noise to demonstrate 'Lost-in-the-Middle'.
     """
     try:
         user_query = request.user_query.strip()
@@ -202,28 +207,47 @@ async def handle_query_standard(request: QueryRequest):
 
         logger.info(f"Processing Standard query: {user_query[:100]}...")
 
+        # 1. Get all text chunks
         all_chunks = store.get_all_texts()
-        entire_document = "\n\n".join(all_chunks) if all_chunks else "(No document uploaded)"
+        if not all_chunks:
+            return {"status": "error", "message": "No document uploaded"}
 
-        # 🚨 FREE TIER LIMIT: Gemini free tier has a 250,000 token-per-minute limit.
-        _MAX_CHARS_FREE_TIER = 600000
+        # 2. Inject noise (irrelevant filler text) to demonstrate "Context Rot"
+        # We interleave real chunks with garbage chunks to simulate background noise.
+        NOISE_FILLERS = [
+            "LOREM IPSUM: Irrelevant filler text about weather in an unrelated city.",
+            "SYSTEM LOG: Error 404 in a coffee machine at sector 7G. Maintenance required.",
+            "HISTORICAL FACT: The first computer bug was an actual moth found in a relay.",
+            "RANDOM CLIP: 'I think there is a world market for about five computers.' - Thomas Watson.",
+            "RECIPE: To make a perfect cup of tea, boil water and steep for 3 minutes."
+        ]
+        
+        noisy_document = []
+        for i, chunk in enumerate(all_chunks):
+            noisy_document.append(chunk)
+            if i % 3 == 0: # Add noise every 3 chunks
+                noisy_document.append(f"[SYSTEM NOISE: {random.choice(NOISE_FILLERS)}]")
+        
+        entire_document = "\n\n".join(noisy_document)
+
+        # 🚨 FREE TIER LIMIT
+        _MAX_CHARS_FREE_TIER = 500000
         if len(entire_document) > _MAX_CHARS_FREE_TIER:
-            entire_document = entire_document[:_MAX_CHARS_FREE_TIER] + "\n\n...[DOCUMENT TRUNCATED DUE TO 250K API TOKEN LIMIT]"
+            entire_document = entire_document[:_MAX_CHARS_FREE_TIER] + "\n\n...[TRUNCATED]"
 
-        standard_prompt = f"""You are given the complete text of a document. Read it and answer the question below.
+        standard_prompt = f"""You are an assistant. Below is a document that may contain irrelevant noise. 
+Answer the question below accurately, even if the information is buried in noise.
 
+<DOCUMENT>
 {entire_document}
+</DOCUMENT>
 
 Question: {user_query}
 
 Answer:"""
 
-        standard_result = llm.generate(standard_prompt, max_tokens=2000, temperature=0.7)
-        logger.info(
-            f"Standard: {len(all_chunks)} chunks, "
-            f"{len(entire_document)} chars, model=gemini-2.5-flash"
-        )
-
+        standard_result = llm_standard.generate(standard_prompt, max_tokens=1000, temperature=0.7)
+        
         return {
             "status": "success",
             "query": user_query,
@@ -269,9 +293,8 @@ Question: {user_query}
 
 Answer:"""
 
-        rag_result = llm.generate(rag_prompt, max_tokens=2000, temperature=0.7)
-        logger.info(f"RAG: {len(retrieved_chunks)} chunks retrieved, model=gemini-2.5-flash")
-
+        rag_result = llm_rag.generate(rag_prompt, max_tokens=1000, temperature=0.7)
+        
         return {
             "status": "success",
             "query": user_query,
