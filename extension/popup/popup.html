@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Context Rot Memory</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 340px;
+      min-height: 200px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      background: #13131f;
+      color: #cdd6f4;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #313244;
+    }
+    .header-icon { font-size: 20px; }
+    .header-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #cdd6f4;
+      letter-spacing: -0.01em;
+    }
+    .header-sub {
+      font-size: 11px;
+      color: #6c7086;
+      margin-top: 1px;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #45475a;
+      margin-left: auto;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-dot.online  { background: #a6e3a1; }
+    .status-dot.offline { background: #f38ba8; }
+
+    /* ── Sections ── */
+    .section {
+      padding: 12px 16px;
+      border-bottom: 1px solid #1e1e2e;
+    }
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6c7086;
+      margin-bottom: 10px;
+    }
+
+    /* ── Stats row ── */
+    .stats-row {
+      display: flex;
+      gap: 8px;
+    }
+    .stat-box {
+      flex: 1;
+      background: #1e1e2e;
+      border: 1px solid #313244;
+      border-radius: 8px;
+      padding: 8px 10px;
+      text-align: center;
+    }
+    .stat-num {
+      font-size: 20px;
+      font-weight: 700;
+      color: #cba6f7;
+      line-height: 1;
+    }
+    .stat-label { font-size: 10px; color: #6c7086; margin-top: 3px; }
+
+    /* ── Toggles ── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 0;
+    }
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      color: #cdd6f4;
+    }
+    .platform-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+    }
+    .dot-chatgpt { background: #89dceb; }
+    .dot-gemini  { background: #a6e3a1; }
+    .dot-claude  { background: #fab387; }
+
+    /* Toggle switch */
+    .switch { position: relative; width: 36px; height: 20px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: #313244;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .slider::before {
+      content: "";
+      position: absolute;
+      width: 14px; height: 14px;
+      left: 3px; top: 3px;
+      background: #6c7086;
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .switch input:checked + .slider { background: #313244; }
+    .switch input:checked + .slider::before {
+      transform: translateX(16px);
+      background: #cba6f7;
+    }
+
+    /* ── Slider ── */
+    .threshold-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .threshold-val {
+      font-size: 12px;
+      font-weight: 600;
+      color: #cba6f7;
+      min-width: 32px;
+      text-align: right;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: #cba6f7;
+      height: 4px;
+      cursor: pointer;
+    }
+
+    /* ── Sessions list ── */
+    .sessions-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 160px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #313244 transparent;
+    }
+    .session-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #1e1e2e;
+      border: 1px solid #313244;
+      border-radius: 8px;
+      padding: 7px 10px;
+    }
+    .session-platform {
+      font-size: 11px;
+      font-weight: 600;
+      color: #cba6f7;
+      min-width: 52px;
+    }
+    .session-meta {
+      flex: 1;
+      font-size: 11px;
+      color: #6c7086;
+    }
+    .session-meta strong { color: #a6adc8; }
+    .delete-btn {
+      background: none;
+      border: none;
+      color: #6c7086;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 4px;
+      border-radius: 4px;
+      line-height: 1;
+      transition: color 0.15s, background 0.15s;
+    }
+    .delete-btn:hover { color: #f38ba8; background: #2a1e2e; }
+
+    .empty-state {
+      text-align: center;
+      padding: 16px;
+      color: #45475a;
+      font-size: 12px;
+    }
+
+    /* ── Footer buttons ── */
+    .footer {
+      padding: 10px 16px;
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      flex: 1;
+      padding: 7px 12px;
+      border-radius: 7px;
+      border: 1px solid #313244;
+      background: #1e1e2e;
+      color: #a6adc8;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn:hover { background: #313244; color: #cdd6f4; }
+    .btn.danger:hover { background: #2a1520; color: #f38ba8; border-color: #f38ba8; }
+
+    /* ── Loading ── */
+    #loading {
+      padding: 32px;
+      text-align: center;
+      color: #45475a;
+      font-size: 12px;
+    }
+    #main { display: none; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <span class="header-icon">🧠</span>
+    <div>
+      <div class="header-title">Context Rot Memory</div>
+      <div class="header-sub">Cross-session AI memory</div>
+    </div>
+    <div class="status-dot" id="status-dot" title="Backend status"></div>
+  </div>
+
+  <!-- Loading state -->
+  <div id="loading">Loading…</div>
+
+  <!-- Main content (shown after data loads) -->
+  <div id="main">
+
+    <!-- Stats -->
+    <div class="section">
+      <div class="section-label">Memory store</div>
+      <div class="stats-row">
+        <div class="stat-box">
+          <div class="stat-num" id="stat-sessions">–</div>
+          <div class="stat-label">Sessions</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num" id="stat-chunks">–</div>
+          <div class="stat-label">Chunks</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Capture toggles -->
+    <div class="section">
+      <div class="section-label">Capture</div>
+
+      <div class="toggle-row">
+        <span class="toggle-label">
+          <span class="platform-dot dot-chatgpt"></span> ChatGPT
+        </span>
+        <label class="switch">
+          <input type="checkbox" id="toggle-chatgpt" />
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <span class="toggle-label">
+          <span class="platform-dot dot-gemini"></span> Gemini
+        </span>
+        <label class="switch">
+          <input type="checkbox" id="toggle-gemini" />
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <span class="toggle-label">
+          <span class="platform-dot dot-claude"></span> Claude.ai
+        </span>
+        <label class="switch">
+          <input type="checkbox" id="toggle-claude" />
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row" style="margin-top:8px; border-top:1px solid #1e1e2e; padding-top:10px;">
+        <span class="toggle-label">Inject memory on focus</span>
+        <label class="switch">
+          <input type="checkbox" id="toggle-inject" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Similarity threshold -->
+    <div class="section">
+      <div class="threshold-row">
+        <span class="section-label" style="margin-bottom:0">Similarity threshold</span>
+        <span class="threshold-val" id="threshold-val">0.30</span>
+      </div>
+      <input type="range" id="threshold-slider" min="0" max="1" step="0.05" value="0.30" />
+    </div>
+
+    <!-- Sessions list -->
+    <div class="section">
+      <div class="section-label">Stored sessions</div>
+      <div class="sessions-list" id="sessions-list">
+        <div class="empty-state">No sessions yet — start chatting!</div>
+      </div>
+    </div>
+
+    <!-- Footer actions -->
+    <div class="footer">
+      <button class="btn" id="btn-refresh">↻ Refresh</button>
+      <button class="btn danger" id="btn-clear-all">🗑 Clear all</button>
+    </div>
+
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
