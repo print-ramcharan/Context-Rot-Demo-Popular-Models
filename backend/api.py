@@ -91,14 +91,14 @@ llm = LLMInference(
 retriever = SemanticRetriever(store, gen, top_k=5)
 chunker = TextChunker(chunk_size=1024, overlap=150)
 
-# Load existing index if it exists
-INDEX_PATH = "memory_index"
-if os.path.exists(INDEX_PATH) and os.path.exists(os.path.join(INDEX_PATH, "index.faiss")):
-    try:
-        store.load(INDEX_PATH)
-        logger.info(f"Loaded existing memory index from {INDEX_PATH} with {len(store.chunks)} chunks")
-    except Exception as e:
-        logger.error(f"Failed to load existing index: {e}")
+# Load existing index if it exists (DISABLED for clean demo)
+# INDEX_PATH = "memory_index"
+# if os.path.exists(INDEX_PATH) and os.path.exists(os.path.join(INDEX_PATH, "index.faiss")):
+#     try:
+#         store.load(INDEX_PATH)
+#         logger.info(f"Loaded existing memory index from {INDEX_PATH} with {len(store.chunks)} chunks")
+#     except Exception as e:
+#         logger.error(f"Failed to load existing index: {e}")
 
 # Data directory
 DATA_DIR = Path("data")
@@ -150,6 +150,10 @@ async def upload_file(file: UploadFile = File(...)):
     """
     try:
         logger.info(f"Received file: {file.filename}")
+        
+        # 0. Clear previous store data to ensure clean comparison for current session
+        store.clear()
+        logger.info("Cleared previous vector store data")
         
         # 1. Save file to disk
         file_path = DATA_DIR / file.filename
@@ -310,6 +314,17 @@ Answer:"""
 
     except Exception as e:
         logger.error(f"RAG Query error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/clear")
+async def clear_store():
+    """Clear the vector store memory."""
+    try:
+        store.clear()
+        logger.info("Vector store manually cleared")
+        return {"status": "success", "message": "Memory cleared"}
+    except Exception as e:
+        logger.error(f"Clear error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
 # ============================================================================

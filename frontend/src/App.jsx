@@ -1,49 +1,257 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import Header from './components/Layout/Header';
 import FileDropzone from './components/Upload/FileDropzone';
 import QueryBar from './components/Chat/QueryBar';
 import ComparisonView from './components/Comparison/ComparisonView';
-import { AlertCircle } from 'lucide-react';
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Bot,
+  Code2,
+  Cpu,
+  Database,
+  Download,
+  Github,
+  Globe,
+  Layers,
+  Layout,
+  MessageSquare,
+  Zap,
+  Twitter,
+  Linkedin,
+  Mail,
+  Heart
+} from 'lucide-react';
 
 const API_BASE = 'http://127.0.0.1:8000';
 
-/* ── Step label ── */
-function StepLabel({ number, label, active }) {
+const technologies = [
+  { name: 'Gemini 1.5 Pro', desc: 'State-of-the-art multimodal reasoning', icon: Bot },
+  { name: 'FAISS', desc: 'High-performance vector similarity search', icon: Database },
+  { name: 'React 18', desc: 'Declarative component-based UI', icon: Layout },
+  { name: 'FastAPI', desc: 'Python-based high-speed backend framework', icon: Zap },
+  { name: 'Vite', desc: 'Modern frontend build tool for speed', icon: Cpu },
+  { name: 'MiniLM-L6', desc: 'Efficient sentence embeddings', icon: Code2 },
+];
+
+function Footer() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-      <span style={{
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: '11px',
-        fontWeight: 500,
-        color: active ? 'var(--purple-400)' : 'var(--text-muted)',
-        letterSpacing: '0.08em',
-        transition: 'color 0.3s ease',
-        userSelect: 'none',
-      }}>
-        0{number}
-      </span>
-      <div style={{
-        height: '1px',
-        width: '24px',
-        background: active ? 'var(--purple-500)' : 'var(--border)',
-        transition: 'background 0.3s ease',
-      }} />
-      <span style={{
-        fontSize: '12px',
-        fontWeight: 600,
-        letterSpacing: '0.06em',
-        textTransform: 'uppercase',
-        color: active ? 'var(--text-secondary)' : 'var(--text-muted)',
-        transition: 'color 0.3s ease',
-      }}>
-        {label}
-      </span>
+    <footer className="site-footer">
+      <div className="footer-inner">
+        <div className="footer-brand">
+          <h2 className="font-heading">Context Rot Lab</h2>
+          <p>
+            Bridging the gap between standard LLM responses and precision RAG architectures.
+          </p>
+          <div className="social-links" style={{ marginTop: '24px' }}>
+            <a href="#" className="social-link"><Twitter size={20} /></a>
+            <a href="#" className="social-link"><Github size={20} /></a>
+            <a href="#" className="social-link"><Linkedin size={20} /></a>
+          </div>
+        </div>
+        <div className="footer-nav">
+          <h4 className="font-heading">Product</h4>
+          <ul className="footer-links">
+            <li><a href="#/home" className="footer-link">Home</a></li>
+            <li><a href="#/app" className="footer-link">Workspace</a></li>
+            <li><a href="#" className="footer-link">Extension</a></li>
+            <li><a href="#" className="footer-link">Documentation</a></li>
+          </ul>
+        </div>
+        <div className="footer-nav">
+          <h4 className="font-heading">Company</h4>
+          <ul className="footer-links">
+            <li><a href="#" className="footer-link">About Us</a></li>
+            <li><a href="#" className="footer-link">Blog</a></li>
+            <li><a href="#" className="footer-link">Partners</a></li>
+            <li><a href="#" className="footer-link">Contact</a></li>
+          </ul>
+        </div>
+      </div>
+      <div className="footer-bottom">
+        <p>&copy; 2026 Context Rot Lab. All rights reserved.</p>
+        <p style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          Made with <Heart size={14} style={{ color: '#ef4444' }} /> by Ram & Varsha
+        </p>
+      </div>
+    </footer>
+  );
+}
+
+function HomePage({ onEnterApp }) {
+  return (
+    <div className="animate-reveal">
+      <section className="hero-section">
+        <div className="hero-tag animate-scale">NEW: BROWSER MEMORY EXTENSION v1.0</div>
+        <h1 className="hero-title animate-reveal stagger-1">
+          Stop Context Rot.<br />Enhance Your RAG.
+        </h1>
+        <p className="hero-description animate-reveal stagger-2">
+          A dual-path evaluation studio designed to compare standard LLM responses 
+          against high-precision RAG architectures in real-time.
+        </p>
+        <div className="hero-actions animate-reveal stagger-3">
+          <button className="btn-primary" onClick={onEnterApp}>
+            Try Workspace <ArrowRight size={18} />
+          </button>
+          <button className="btn-secondary">
+            <Download size={18} /> Download Extension
+          </button>
+        </div>
+      </section>
+
+      <section className="tech-section">
+        <div className="section-label animate-reveal stagger-4">Powered by modern stack</div>
+        <div className="tech-grid">
+          {technologies.map((tech, i) => (
+            <div key={tech.name} className={`tech-item animate-reveal stagger-${(i % 4) + 1}`}>
+              <tech.icon className="tech-icon" />
+              <h3 className="font-heading">{tech.name}</h3>
+              <p style={{ fontSize: '14px', color: 'var(--text-secondary)', textAlign: 'center' }}>{tech.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="authors-section">
+        <div className="section-label animate-reveal">MEET THE ARCHITECTS</div>
+        <div className="authors-grid">
+          <div className="author-card animate-reveal stagger-1">
+            <div className="author-avatar">R</div>
+            <div className="author-info">
+              <h3 className="font-heading">Ram Charan</h3>
+              <p className="author-role">Lead Engineer</p>
+              <p className="author-bio">Specializing in distributed systems and LLM orchestration. Visionary behind Context Rot Lab.</p>
+              <div className="social-links">
+                <a href="https://github.com/print-ramcharan" className="social-link"><Github size={18} /></a>
+                <a href="#" className="social-link"><Mail size={18} /></a>
+              </div>
+            </div>
+          </div>
+          <div className="author-card animate-reveal stagger-2">
+            <div className="author-avatar">V</div>
+            <div className="author-info">
+              <h3 className="font-heading">Varsha</h3>
+              <p className="author-role">AI Researcher</p>
+              <p className="author-bio">Expert in vector databases and retrieval optimization. Fine-tuning the RAG experience.</p>
+              <div className="social-links">
+                <a href="#" className="social-link"><Github size={18} /></a>
+                <a href="#" className="social-link"><Mail size={18} /></a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="cta-section animate-reveal" style={{ padding: '80px 0', textAlign: 'center' }}>
+        <div className="glass-container" style={{ padding: '60px', overflow: 'hidden', position: 'relative' }}>
+          <h2 className="hero-title" style={{ fontSize: '48px', marginBottom: '16px' }}>Ready to optimize your context?</h2>
+          <p className="hero-description" style={{ marginBottom: '32px' }}>Join the future of retrieval-augmented generation.</p>
+          <button className="btn-primary" onClick={onEnterApp} style={{ padding: '16px 40px', fontSize: '18px' }}>
+            Open the Workspace <Zap size={20} />
+          </button>
+        </div>
+      </section>
+      
+      <Footer />
     </div>
   );
 }
 
+function WorkspacePage({
+  query,
+  setQuery,
+  loadingStandard,
+  loadingRag,
+  error,
+  responses,
+  sources,
+  documentUploaded,
+  onFileUpload,
+  onQuery,
+}) {
+  const hasResults = responses.standard || responses.rag || loadingStandard || loadingRag;
+
+  return (
+    <div className="workspace-container animate-reveal">
+      <div className="workspace-header">
+        <div>
+          <h1 className="workspace-title font-heading">Workspace</h1>
+          <p style={{ color: 'var(--text-secondary)' }}>Upload your source and query the precision engine.</p>
+        </div>
+        <div className="workspace-stats">
+          <div className="stat-item">
+            <div className="stat-value">2.4s</div>
+            <div className="stat-label">Avg Latency</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-value">98%</div>
+            <div className="stat-label">Accuracy</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+        <div className="premium-card">
+          <h3 className="font-heading" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Layers size={18} /> 1. Upload Source
+          </h3>
+          <FileDropzone onUpload={onFileUpload} />
+        </div>
+        
+        <div className="premium-card" style={{ opacity: documentUploaded ? 1 : 0.5, transition: 'opacity 0.3s' }}>
+          <h3 className="font-heading" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <MessageSquare size={18} /> 2. Expert Query
+          </h3>
+          <QueryBar
+            value={query}
+            onChange={setQuery}
+            onSubmit={onQuery}
+            loading={loadingStandard || loadingRag}
+            disabled={!documentUploaded}
+          />
+          {error && <p style={{ color: '#ef4444', fontSize: '12px', marginTop: '8px' }}>{error}</p>}
+        </div>
+
+        <div className="premium-card" style={{ minHeight: '500px' }}>
+          <h3 className="font-heading" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Zap size={18} /> 3. Comparative Results
+          </h3>
+          {hasResults ? (
+            <ComparisonView
+              standard={responses.standard}
+              rag={responses.rag}
+              loadingStandard={loadingStandard}
+              loadingRag={loadingRag}
+              sources={sources}
+            />
+          ) : (
+            <div style={{ height: '300px', display: 'grid', placeItems: 'center', color: 'var(--text-muted)' }}>
+              <div style={{ textAlign: 'center' }}>
+                <Globe size={48} style={{ marginBottom: '16px', opacity: 0.2 }} />
+                <p>Upload a document and ask a question to see the comparative beauty.</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <div style={{ marginTop: '80px' }}>
+        <Footer />
+      </div>
+    </div>
+  );
+}
+
+function getRouteFromHash() {
+  if (typeof window === 'undefined') return 'home';
+  const rawHash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+  return rawHash === 'app' ? 'app' : 'home';
+}
+
 export default function App() {
+  const [route, setRoute] = useState(getRouteFromHash());
   const [query, setQuery] = useState('');
   const [loadingStandard, setLoadingStandard] = useState(false);
   const [loadingRag, setLoadingRag] = useState(false);
@@ -52,14 +260,36 @@ export default function App() {
   const [sources, setSources] = useState([]);
   const [documentUploaded, setDocumentUploaded] = useState(false);
 
-  const handleFileUpload = (file) => {
+  useEffect(() => {
+    const syncRoute = () => {
+      setRoute(getRouteFromHash());
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    if (!window.location.hash) {
+      window.location.hash = '#/home';
+    }
+
+    syncRoute();
+    window.addEventListener('hashchange', syncRoute);
+    return () => window.removeEventListener('hashchange', syncRoute);
+  }, []);
+
+  const navigate = (nextRoute) => {
+    window.location.hash = `#/${nextRoute}`;
+  };
+
+  const handleFileUpload = () => {
     setDocumentUploaded(true);
     setError('');
   };
 
   const handleQuery = async (e) => {
     e.preventDefault();
-    if (!query.trim()) { setError('Please enter a question'); return; }
+    if (!query.trim()) {
+      setError('Please enter a question');
+      return;
+    }
 
     setLoadingStandard(true);
     setLoadingRag(true);
@@ -67,7 +297,6 @@ export default function App() {
     setResponses({ standard: null, rag: null });
     setSources([]);
 
-    // Independent fetch for Standard path
     axios.post(`${API_BASE}/query/standard`, { user_query: query })
       .then(({ data }) => {
         if (data.status !== 'success') throw new Error(data.detail || 'Standard query failed');
@@ -79,7 +308,6 @@ export default function App() {
       })
       .finally(() => setLoadingStandard(false));
 
-    // Independent fetch for RAG path
     axios.post(`${API_BASE}/query/rag`, { user_query: query })
       .then(({ data }) => {
         if (data.status !== 'success') throw new Error(data.detail || 'RAG query failed');
@@ -93,127 +321,27 @@ export default function App() {
       .finally(() => setLoadingRag(false));
   };
 
-  const hasResults = responses.standard || responses.rag || loadingStandard || loadingRag;
-
   return (
-    <div className="bg-radial-glow" style={{ minHeight: '100vh' }}>
-      <Header />
-
-      <main style={{
-        maxWidth: '1100px',
-        margin: '0 auto',
-        padding: '48px 24px 80px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '48px',
-      }}>
-
-        {/* ── Hero intro ── */}
-        <div className="animate-fade-up" style={{ textAlign: 'center', maxWidth: '620px', margin: '0 auto' }}>
-          <h2 style={{
-            fontSize: 'clamp(26px, 4vw, 38px)',
-            fontWeight: 800,
-            letterSpacing: '-0.03em',
-            lineHeight: 1.2,
-            marginBottom: '14px',
-          }}>
-            <span className="gradient-text">Context Rot</span>
-            {' '}vs RAG
-          </h2>
-          <p style={{
-            fontSize: '15px',
-            color: 'var(--text-secondary)',
-            lineHeight: '1.7',
-          }}>
-            Upload a document, ask a question, and observe how context degradation
-            impacts standard LLM responses — compared against retrieval-augmented generation.
-          </p>
-        </div>
-
-        {/* ── Step 1: Upload ── */}
-        <section className="animate-fade-up" style={{ animationDelay: '80ms' }}>
-          <StepLabel number={1} label="Upload Document" active={true} />
-          <FileDropzone onUpload={handleFileUpload} />
-        </section>
-
-        {/* ── Step 2: Query ── */}
-        <section className="animate-fade-up" style={{ animationDelay: '160ms' }}>
-          <StepLabel number={2} label="Ask a Question" active={documentUploaded} />
-          <QueryBar
-            value={query}
-            onChange={setQuery}
-            onSubmit={handleQuery}
-            loading={loadingStandard || loadingRag}
+    <div className="app-shell">
+      <Header page={route} />
+      <main className="main-content">
+        {route === 'app' ? (
+          <WorkspacePage
+            query={query}
+            setQuery={setQuery}
+            loadingStandard={loadingStandard}
+            loadingRag={loadingRag}
+            error={error}
+            responses={responses}
+            sources={sources}
+            documentUploaded={documentUploaded}
+            onFileUpload={handleFileUpload}
+            onQuery={handleQuery}
           />
-
-          {error && (
-            <div className="animate-fade-in" style={{
-              marginTop: '12px',
-              display: 'flex', alignItems: 'flex-start', gap: '10px',
-              padding: '14px 16px',
-              borderRadius: '10px',
-              border: '1px solid rgba(239,68,68,0.3)',
-              background: 'rgba(239,68,68,0.06)',
-            }}>
-              <AlertCircle size={16} style={{ color: 'var(--red-400)', flexShrink: 0, marginTop: '1px' }} />
-              <div>
-                <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--red-400)', marginBottom: '2px' }}>Error</p>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{error}</p>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* ── Step 3: Results ── */}
-        <section className="animate-fade-up" style={{ animationDelay: '240ms' }}>
-          <StepLabel number={3} label="Compare Responses" active={!!hasResults} />
-
-          {hasResults ? (
-            <ComparisonView
-              standard={responses.standard}
-              rag={responses.rag}
-              loadingStandard={loadingStandard}
-              loadingRag={loadingRag}
-              sources={sources}
-            />
-          ) : (
-            <div style={{
-              borderRadius: '14px',
-              border: '2px dashed var(--border)',
-              padding: '56px 24px',
-              textAlign: 'center',
-              background: 'var(--bg-surface)',
-            }}>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                Results will appear here after you upload a document and submit a query.
-              </p>
-            </div>
-          )}
-        </section>
+        ) : (
+          <HomePage onEnterApp={() => navigate('app')} />
+        )}
       </main>
-
-      {/* ── Footer ── */}
-      <footer style={{
-        borderTop: '1px solid var(--border)',
-        padding: '20px 24px',
-        textAlign: 'center',
-      }}>
-        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          Built with{' '}
-          {['React', 'FastAPI', 'Gemini', 'FAISS'].map((t, i) => (
-            <span key={t}>
-              {i > 0 && <span style={{ margin: '0 6px', opacity: 0.4 }}>·</span>}
-              <span style={{
-                padding: '2px 7px', borderRadius: '5px',
-                border: '1px solid var(--border)',
-                background: 'var(--bg-surface)',
-                fontSize: '11px',
-                fontFamily: "'JetBrains Mono', monospace",
-              }}>{t}</span>
-            </span>
-          ))}
-        </p>
-      </footer>
     </div>
   );
 }
