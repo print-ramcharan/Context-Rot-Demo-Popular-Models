@@ -1,0 +1,18 @@
+{
+  "chatgpt-mo1mf6qfe825lv": {
+    "session_id": "chatgpt-mo1mf6qfe825lv",
+    "platform": "chatgpt",
+    "created_at": "2026-04-16T15:17:50.766926+00:00",
+    "message_count": 1,
+    "chunk_count": 1,
+    "last_updated": "2026-04-16T15:17:50.766926+00:00"
+  },
+  "gemini-mo1miy2twwqhvx": {
+    "session_id": "gemini-mo1miy2twwqhvx",
+    "platform": "gemini",
+    "created_at": "2026-04-16T15:18:29.731779+00:00",
+    "message_count": 1,
+    "chunk_count": 1,
+    "last_updated": "2026-04-16T15:18:29.731779+00:00"
+  }
+}

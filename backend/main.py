@@ -6,6 +6,9 @@ from src.vector_store import VectorStore
 from src.retrieval import SemanticRetriever
 from src.context_assembly import ContextAssembler
 from src.inference import LLMInference
+from conversation_store import ConversationStore
+
+conv_store = ConversationStore(storage_dir="conversations")
 
 class ExternalMemorySystem:
     """
@@ -216,3 +219,4 @@ class ExternalMemorySystem:
             'llm_model': self.llm.model
         })
         return stats
+

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Layers3, Moon, Sun, Cpu } from 'lucide-react';
+import { Layers3, Moon, Sun, Github, ExternalLink } from 'lucide-react';
 
-export default function Header() {
+export default function Header({ page = 'home' }) {
   const [theme, setTheme] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') || 'dark';
@@ -19,130 +19,71 @@ export default function Header() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
+  const toggleTheme = () => setTheme(current => current === 'dark' ? 'light' : 'dark');
 
   return (
-    <header
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        width: '100%',
-        borderBottom: '1px solid var(--border)',
-        background: 'rgba(7, 5, 15, 0.85)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
-      }}
-      className="light-header"
-    >
-      <style>{`
-        :root.light header.light-header {
-          background: rgba(248, 245, 255, 0.90) !important;
-        }
-      `}</style>
-
-      <div style={{
-        maxWidth: '1280px',
-        margin: '0 auto',
-        padding: '0 24px',
-        height: '64px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}>
-
-        {/* Logo + Title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{
-            width: '36px', height: '36px',
-            borderRadius: '10px',
-            border: '1px solid var(--border-strong)',
-            background: 'linear-gradient(135deg, rgba(139,92,246,0.2) 0%, rgba(139,92,246,0.05) 100%)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Layers3 size={18} style={{ color: 'var(--purple-400)' }} />
+    <header className="site-header">
+      <div className="header-inner">
+        <a className="brand-link" href="#/home" style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none', color: 'inherit' }}>
+          <div className="brand-mark" style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'var(--purple-600)', display: 'grid', placeItems: 'center', color: 'white' }}>
+            <Layers3 size={20} />
           </div>
-          <div>
-            <h1 style={{
-              fontSize: '15px',
-              fontWeight: 700,
-              letterSpacing: '-0.02em',
-              color: 'var(--text-primary)',
-              lineHeight: 1.2,
-            }}>
-              Context Rot Lab
-            </h1>
-            <p style={{
-              fontSize: '11px',
-              color: 'var(--text-muted)',
-              letterSpacing: '0.04em',
-              marginTop: '1px',
-            }}>
-              RAG vs Standard · 2026
-            </p>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '18px', fontWeight: '800', lineHeight: '1' }}>Context Rot Lab</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '600' }}>PRECISION RAG ENGINE</span>
           </div>
-        </div>
+        </a>
 
-        {/* Right side */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {/* Stack badges */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            fontSize: '11px', color: 'var(--text-muted)',
-            fontFamily: "'JetBrains Mono', monospace",
-          }}
-            className="stack-badges"
+        <nav style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
+          <a 
+            href="#/home" 
+            style={{ 
+              textDecoration: 'none', 
+              color: page === 'home' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              fontWeight: '600',
+              fontSize: '14px',
+              transition: 'color 0.2s'
+            }}
           >
-            <style>{`
-              @media (max-width: 600px) { .stack-badges { display: none !important; } }
-            `}</style>
-            {['Gemini', 'FAISS', 'MiniLM'].map((label, i) => (
-              <span key={label} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                {i > 0 && <span style={{ opacity: 0.3 }}>·</span>}
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '4px',
-                  padding: '3px 8px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border)',
-                  background: 'var(--bg-surface)',
-                  color: 'var(--text-secondary)',
-                }}>
-                  <span className="live-dot" style={{
-                    background: i === 0 ? 'var(--purple-400)' : i === 1 ? 'var(--emerald-400)' : 'var(--orange-400)',
-                  }} />
-                  {label}
-                </span>
-              </span>
-            ))}
-          </div>
+            Home
+          </a>
+          <a 
+            href="#/app" 
+            style={{ 
+              textDecoration: 'none', 
+              color: page === 'app' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              fontWeight: '600',
+              fontSize: '14px',
+              transition: 'color 0.2s'
+            }}
+          >
+            Workspace
+          </a>
+        </nav>
 
-          {/* Theme toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <a href="https://github.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)' }}>
+            <Github size={20} />
+          </a>
           <button
             onClick={toggleTheme}
-            aria-label="Toggle theme"
-            style={{
-              width: '36px', height: '36px',
-              borderRadius: '8px',
-              border: '1px solid var(--border)',
-              background: 'var(--bg-surface)',
-              color: 'var(--text-secondary)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: 'var(--text-secondary)', 
               cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center'
             }}
-            onMouseEnter={e => {
-              e.currentTarget.style.borderColor = 'var(--border-strong)';
-              e.currentTarget.style.color = 'var(--purple-400)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.borderColor = 'var(--border)';
-              e.currentTarget.style.color = 'var(--text-secondary)';
-            }}
+            aria-label="Toggle theme"
           >
-            {theme === 'dark'
-              ? <Sun size={16} />
-              : <Moon size={16} />
-            }
+            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
           </button>
+          {page !== 'app' && (
+            <a href="#/app" className="btn-primary" style={{ padding: '8px 20px', fontSize: '13px' }}>
+              Get Started
+            </a>
+          )}
         </div>
       </div>
     </header>

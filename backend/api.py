@@ -12,6 +12,8 @@ import shutil
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
+from typing import Optional
+from conversation_store import ConversationStore
 
 # Load environment variables
 load_dotenv()
@@ -45,6 +47,19 @@ class UploadResponse(BaseModel):
     chunks_created: int = 0
     embeddings_stored: int = 0
 
+class StoreConversationRequest(BaseModel):
+    platform: str
+    session_id: str
+    prompt: str
+    response: str
+
+
+class RetrieveContextRequest(BaseModel):
+    query: str
+    top_k: int = 5
+    platform_filter: Optional[str] = None
+    similarity_threshold: float = 0.0
+
 import yaml
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -58,6 +73,8 @@ llm_cfg = config.get('llm', {})
 gemini_cfg = llm_cfg.get('gemini', {})
 
 # ── Initialize AI Components ──────────────────────────────────────────────────
+conv_store = ConversationStore(storage_dir="conversations")
+
 store = VectorStore(dimension=384)
 gen = EmbeddingGenerator()
 
@@ -79,14 +96,14 @@ llm_rag = LLMInference(
 retriever = SemanticRetriever(store, gen, top_k=5)
 chunker = TextChunker(chunk_size=1024, overlap=150)
 
-# Load existing index if it exists
-INDEX_PATH = "memory_index"
-if os.path.exists(INDEX_PATH) and os.path.exists(os.path.join(INDEX_PATH, "index.faiss")):
-    try:
-        store.load(INDEX_PATH)
-        logger.info(f"Loaded existing memory index from {INDEX_PATH} with {len(store.chunks)} chunks")
-    except Exception as e:
-        logger.error(f"Failed to load existing index: {e}")
+# Load existing index if it exists (DISABLED for clean demo)
+# INDEX_PATH = "memory_index"
+# if os.path.exists(INDEX_PATH) and os.path.exists(os.path.join(INDEX_PATH, "index.faiss")):
+#     try:
+#         store.load(INDEX_PATH)
+#         logger.info(f"Loaded existing memory index from {INDEX_PATH} with {len(store.chunks)} chunks")
+#     except Exception as e:
+#         logger.error(f"Failed to load existing index: {e}")
 
 # Data directory
 DATA_DIR = Path("data")
@@ -107,6 +124,11 @@ def root():
             "health": "/health",
             "upload": "POST /upload",
             "query": "POST /query",
+            "store_conversation": "POST /store-conversation",
+            "retrieve_context": "POST /retrieve-context",
+            "list_sessions": "GET /list-sessions",
+            "delete_session": "DELETE /delete-session/{session_id}",
+            "conv_stats": "GET /conv-stats",
             "stats": "GET /stats"
         }
     }
@@ -133,6 +155,10 @@ async def upload_file(file: UploadFile = File(...)):
     """
     try:
         logger.info(f"Received file: {file.filename}")
+        
+        # 0. Clear previous store data to ensure clean comparison for current session
+        store.clear()
+        logger.info("Cleared previous vector store data")
         
         # 1. Save file to disk
         file_path = DATA_DIR / file.filename
@@ -312,6 +338,17 @@ Answer:"""
     except Exception as e:
         logger.error(f"RAG Query error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/clear")
+async def clear_store():
+    """Clear the vector store memory."""
+    try:
+        store.clear()
+        logger.info("Vector store manually cleared")
+        return {"status": "success", "message": "Memory cleared"}
+    except Exception as e:
+        logger.error(f"Clear error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
     
 # ============================================================================
 # STATS ENDPOINT
@@ -374,6 +411,134 @@ def _extract_text_from_file(file_path: Path, filename: str) -> str:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 return f.read()
                 
+    except Exception as e:
+        logger.error(f"Error extracting text from {filename}: {str(e)}")
+        return ""
+
+
+ 
+@app.post("/store-conversation")
+async def store_conversation(request: StoreConversationRequest):
+    try:
+        if not request.prompt.strip() and not request.response.strip():
+            raise ValueError("Both prompt and response are empty")
+ 
+        result = conv_store.store_conversation(
+            platform=request.platform,
+            session_id=request.session_id,
+            prompt=request.prompt,
+            response=request.response,
+            embedding_generator=gen,
+        )
+ 
+        logger.info(
+            f"Stored conversation: platform={request.platform} "
+            f"session={request.session_id} chunks={result['chunk_count']}"
+        )
+        return {"status": "success", **result}
+ 
+    except Exception as e:
+        logger.error(f"store-conversation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+ 
+ 
+@app.post("/retrieve-context")
+async def retrieve_context(request: RetrieveContextRequest):
+    try:
+        if not request.query.strip():
+            raise ValueError("Query cannot be empty")
+ 
+        chunks = conv_store.retrieve_context(
+            query=request.query,
+            embedding_generator=gen,
+            top_k=request.top_k,
+            platform_filter=request.platform_filter,
+            similarity_threshold=request.similarity_threshold,
+        )
+ 
+        return {
+            "status": "success",
+            "query": request.query,
+            "results": chunks,
+            "count": len(chunks),
+        }
+ 
+    except Exception as e:
+        logger.error(f"retrieve-context error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+ 
+ 
+@app.get("/list-sessions")
+def list_sessions():
+    return {
+        "status": "success",
+        "sessions": conv_store.list_sessions(),
+        "total": len(conv_store.list_sessions()),
+    }
+ 
+ 
+@app.delete("/delete-session/{session_id}")
+def delete_session(session_id: str):
+    try:
+        result = conv_store.delete_session(session_id)
+ 
+        if not result["deleted"]:
+            raise HTTPException(
+                status_code=404,
+                detail=result.get("reason", "session not found")
+            )
+ 
+        logger.info(f"Deleted session: {session_id}")
+        return {"status": "success", **result}
+ 
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"delete-session error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+ 
+ 
+@app.get("/conv-stats")
+def conv_stats():
+    return {"status": "success", **conv_store.get_stats()}
+ 
+ 
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+ 
+def _extract_text_from_file(file_path: Path, filename: str) -> str:
+    try:
+        if filename.endswith('.txt') or filename.endswith('.md'):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+ 
+        elif filename.endswith('.pdf'):
+            try:
+                import PyPDF2
+                text = ""
+                with open(file_path, 'rb') as f:
+                    pdf_reader = PyPDF2.PdfReader(f)
+                    for page in pdf_reader.pages:
+                        text += page.extract_text()
+                return text
+            except ImportError:
+                logger.warning("PyPDF2 not installed. pip install PyPDF2")
+                return ""
+ 
+        elif filename.endswith('.docx'):
+            try:
+                from docx import Document
+                doc = Document(file_path)
+                return "\n".join([para.text for para in doc.paragraphs])
+            except ImportError:
+                logger.warning("python-docx not installed. pip install python-docx")
+                return ""
+ 
+        else:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                return f.read()
+ 
     except Exception as e:
         logger.error(f"Error extracting text from {filename}: {str(e)}")
         return ""
