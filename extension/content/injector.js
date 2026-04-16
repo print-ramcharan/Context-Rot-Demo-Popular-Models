@@ -10,7 +10,7 @@
  *   tryInjectWhenReady(platform, threshold, maxWaitMs)
  */
 
-let activeBanner  = null;
+let activeBanner = null;
 let injectionDone = false; // inject once per page load
 
 // ── Main entry ────────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ async function injectContext(inputEl, platform, similarityThreshold = 0.3) {
     return;
   }
 
-  const results      = reply.data.results;
+  const results = reply.data.results;
   const contextBlock = formatContextBlock(results);
 
   prependToInput(inputEl, contextBlock);
@@ -62,8 +62,8 @@ async function tryInjectWhenReady(platform, similarityThreshold = 0.3, maxWaitMs
 
   const selectorMap = {
     chatgpt: ["#prompt-textarea", "textarea", "[contenteditable='true']"],
-    gemini:  [".ql-editor", "[contenteditable='true']"],
-    claude:  [".ProseMirror", "[contenteditable='true']"],
+    gemini: [".ql-editor", "[contenteditable='true']"],
+    claude: [".ProseMirror", "[contenteditable='true']"],
   };
   const candidates = selectorMap[platform] || ["textarea", "[contenteditable='true']"];
   const start = Date.now();
@@ -97,9 +97,9 @@ async function getRecentTopicQuery() {
     const reply = await sendMessage({ type: "LIST" });
     if (reply?.data?.sessions?.length) {
       // Use a broad generic query — real embeddings will still surface relevant chunks
-      return "recent conversation context question discussion";
+      return "previous conversation memory important user facts ongoing project discussion";
     }
-  } catch (_) {}
+  } catch (_) { }
   return null;
 }
 
@@ -107,7 +107,7 @@ async function getRecentTopicQuery() {
 
 function formatContextBlock(results) {
   const snippets = results.slice(0, 3).map((r, i) => {
-    const date    = r.timestamp ? new Date(r.timestamp).toLocaleDateString() : "unknown";
+    const date = r.timestamp ? new Date(r.timestamp).toLocaleDateString() : "unknown";
     const preview = r.text.slice(0, 400) + (r.text.length > 400 ? "…" : "");
     return `[Memory ${i + 1} | ${r.platform} | ${date} | score: ${r.score.toFixed(2)}]\n${preview}`;
   }).join("\n\n");
@@ -153,7 +153,7 @@ function removeInjectedContext(el, contextBlock) {
 function moveCursorAfter(el, offset) {
   try {
     const range = document.createRange();
-    const sel   = window.getSelection();
+    const sel = window.getSelection();
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     let chars = 0, node;
     while ((node = walker.nextNode())) {
@@ -170,7 +170,7 @@ function moveCursorAfter(el, offset) {
     range.collapse(false);
     sel.removeAllRanges();
     sel.addRange(range);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function isVisible(el) {
@@ -178,7 +178,7 @@ function isVisible(el) {
   const r = el.getBoundingClientRect();
   return r.width > 0 && r.height > 0 &&
     getComputedStyle(el).visibility !== "hidden" &&
-    getComputedStyle(el).display    !== "none";
+    getComputedStyle(el).display !== "none";
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -199,10 +199,10 @@ function showBanner(inputEl, count, onDismiss) {
     box-shadow:0 4px 24px rgba(0,0,0,0.4); max-width:440px; pointer-events:all;
   `;
 
-  const icon    = Object.assign(document.createElement("span"), { textContent: "🧠" });
+  const icon = Object.assign(document.createElement("span"), { textContent: "🧠" });
   icon.style.fontSize = "16px";
 
-  const msg     = Object.assign(document.createElement("span"), {
+  const msg = Object.assign(document.createElement("span"), {
     textContent: `Memory: ${count} snippet${count !== 1 ? "s" : ""} injected from past sessions`
   });
 
@@ -231,8 +231,9 @@ function sendMessage(msg) {
     try {
       chrome.runtime.sendMessage(msg, (res) => {
         if (chrome.runtime.lastError) {
-          if (!e.message.includes("context invalidated")) {
-            console.warn("[ContextRot/Injector] sendMessage threw:", e.message);
+          const errMsg = chrome.runtime.lastError.message;
+          if (!errMsg.includes("context invalidated")) {
+            console.warn("[ContextRot/Injector]", errMsg);
           }
           resolve(null);
         } else {
