@@ -284,8 +284,8 @@ export default function App() {
                 [type]: { 
                   ...prev[type], 
                   model: data.model,
-                  context_used: data.context_used,
-                  text: (prev[type]?.text || '') // Ensure text is preserved or initialized
+                  context_used: data.context || data.context_used,
+                  text: (prev[type]?.text || '')
                 }
               }));
               if (type === 'rag' && data.sources) setSources(data.sources);

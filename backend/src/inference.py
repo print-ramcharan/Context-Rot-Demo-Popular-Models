@@ -411,9 +411,30 @@ class LLMInference:
         """
         Asynchronous generator yielding response chunks from LLM.
         """
+        # Check semantic cache first
+        if self.semantic_cache:
+            cached = self.semantic_cache.lookup(prompt)
+            if cached:
+                yield {"text": cached["response"], "tokens": cached["tokens_used"], "done": True, "cache_hit": True}
+                return
+
+        full_text = ""
+        final_usage = {}
+        
         if self.provider == "gemini":
             async for chunk in self._stream_generate_gemini_async(prompt, max_tokens, temperature):
+                if chunk.get("text"):
+                    full_text += chunk["text"]
+                if chunk.get("done") and chunk.get("tokens"):
+                    final_usage = chunk["tokens"]
                 yield chunk
+            
+            # Save to cache if enabled
+            if self.semantic_cache and full_text.strip():
+                self.semantic_cache.store(prompt, {
+                    "response": full_text,
+                    "tokens_used": final_usage
+                })
         else:
             # Fallback for providers that don't support streaming yet
             res = self.generate(prompt, max_tokens, temperature)

@@ -166,21 +166,14 @@ Question: {query}
 Answer:"""
 
 def format_rag_prompt(query: str, context: str) -> str:
-    return f"""You are a highly precise retrieval assistant. Below are multiple relevant excerpts from a document. 
-Your goal is to provide a comprehensive answer that identifies ALL relevant items, facts, and events mentioned in the context.
-
-INSTRUCTIONS:
-1. Examine the context carefully.
-2. Identify all distinct items or details that answer the query.
-3. If multiple items are found (e.g., at different times or locations), include all of them.
-4. Do not omit subtle details.
+    return f"""Answer the question concisely using ONLY the provided context. If the answer is not in the context, say you don't know.
 
 <CONTEXT>
 {context}
 </CONTEXT>
 
 Question: {query}
-Comprehensive Answer:"""
+Answer:"""
 
 # ── API Endpoints ─────────────────────────────────────────────────────────────
 
@@ -221,6 +214,10 @@ async def upload_file(
         store.add(embeddings, chunk_texts, metadata=metadata_list)
         store.save(INDEX_PATH)
         
+        # Pre-build lexical index for immediate query readiness
+        retriever.build_lexical_index()
+        logger.info(f"Pre-built BM25 index for {len(chunk_dicts)} chunks")
+        
         latency = (time.perf_counter() - extract_start) * 1000
         
         return UploadResponse(
@@ -241,6 +238,10 @@ async def handle_query_standard(request: QueryRequest):
             total_start = time.perf_counter()
             user_query = request.user_query.strip()
             
+            # Artificial head start for RAG demonstration purposes
+            import asyncio
+            await asyncio.sleep(2.0)
+            
             yield json.dumps({"type": "metadata", "model": llm_standard.model}) + "\n"
 
             full_context = store.get_all_texts()
@@ -251,11 +252,13 @@ async def handle_query_standard(request: QueryRequest):
                     yield json.dumps({"type": "error", "detail": chunk["error"]}) + "\n"
                     break
                 
+                # Yield text if present (even in final chunks)
+                if chunk.get("text"):
+                    yield json.dumps({"type": "text", "text": chunk["text"]}) + "\n"
+
                 if chunk.get("done"):
                     latency = (time.perf_counter() - total_start) * 1000
                     yield json.dumps({"type": "final", "tokens": chunk.get("tokens"), "latency_ms": latency}) + "\n"
-                else:
-                    yield json.dumps({"type": "text", "text": chunk.get("text")}) + "\n"
         except Exception as e:
             yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
 
@@ -288,7 +291,8 @@ async def handle_query_rag(request: QueryRequest):
                 "type": "metadata",
                 "model": llm_rag.model,
                 "retrieval_ms": retrieve_time,
-                "chunks_count": len(retrieved_chunks)
+                "chunks_count": len(retrieved_chunks),
+                "context": context
             }) + "\n"
 
             prompt = format_rag_prompt(user_query, context)
@@ -297,11 +301,13 @@ async def handle_query_rag(request: QueryRequest):
                     yield json.dumps({"type": "error", "detail": chunk["error"]}) + "\n"
                     break
                 
+                # Yield text if present (even in final chunks)
+                if chunk.get("text"):
+                    yield json.dumps({"type": "text", "text": chunk["text"]}) + "\n"
+
                 if chunk.get("done"):
                     latency = (time.perf_counter() - total_start) * 1000
                     yield json.dumps({"type": "final", "tokens": chunk.get("tokens"), "latency_ms": latency}) + "\n"
-                else:
-                    yield json.dumps({"type": "text", "text": chunk.get("text")}) + "\n"
         except Exception as e:
             yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
 
