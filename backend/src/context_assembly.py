@@ -133,7 +133,7 @@ class ContextAssembler:
         return valid_chunks
 
     def extract_relevant_sentences(self, query: str, chunk_text: str, max_sentences: int = 2) -> str:
-        sentences = re.split(r'(?<=[.!?])\s+', chunk_text.strip())
+        sentences = self._split_sentences(chunk_text)
         if not sentences:
             return chunk_text
 
@@ -152,6 +152,15 @@ class ContextAssembler:
         scored.sort(key=lambda x: (-x[1], x[0]))
         top = sorted(scored[:max_sentences], key=lambda x: x[0])
         return " ".join([t[2] for t in top])
+
+    def _split_sentences(self, text: str) -> list[str]:
+        abbreviations = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Sr.", "Jr.", "vs.", "e.g.", "i.e."]
+        placeholder = "<DOT>"
+        safe_text = text
+        for abbr in abbreviations:
+            safe_text = safe_text.replace(abbr, abbr.replace(".", placeholder))
+        sentences = re.split(r'(?<=[.!?])\s+', safe_text.strip())
+        return [s.replace(placeholder, ".").strip() for s in sentences if s.strip()]
 
     def compress_context(self, query: str, chunks: list[dict],
                          max_context_chars: int = 2600,

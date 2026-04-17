@@ -5,6 +5,9 @@ import math
 import re
 import time
 from collections import OrderedDict
+import logging
+
+logger = logging.getLogger(__name__)
 
 def _tokenize(text: str) -> list[str]:
     return re.findall(r"\b\w+\b", text.lower())
@@ -39,6 +42,8 @@ class BM25Index:
     def score(self, query: str) -> list[float]:
         if not self.texts:
             return []
+        if self.avgdl == 0.0:
+            return [0.0] * len(self.texts)
         tokens = _tokenize(query)
         scores = [0.0] * len(self.texts)
         if not tokens:
@@ -260,6 +265,7 @@ class SemanticRetriever:
             reranked = self.reranker.rerank(query, pool, top_n=self.rerank_top_n)
             return reranked
         except Exception:
+            logger.exception("Reranking failed")
             return candidates
     
     def retrieve_multi_query(self, queries: list[str], 

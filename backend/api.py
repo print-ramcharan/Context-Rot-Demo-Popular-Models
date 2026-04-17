@@ -201,7 +201,7 @@ def health():
 @app.post("/upload", response_model=UploadResponse)
 async def upload_file(
     file: UploadFile = File(...),
-    clear_existing_data: bool = Query(False, alias="replace_existing")
+    clear_existing_data: bool = Query(False, alias="clear_existing")
 ):
     """
     Upload and ingest a file into the vector store.
@@ -394,13 +394,16 @@ async def handle_query_rag(request: QueryRequest):
         retrieve_ms = (time.perf_counter() - retrieve_start) * 1000
 
         compact_start = time.perf_counter()
-        compact_chunks = assembler.compress_context(
-            user_query,
-            retrieved_chunks,
-            max_context_chars=context_cfg.get('max_context_chars', 2600),
-            max_sentences=context_cfg.get('max_sentences', 2),
-            max_chunks_after_compaction=context_cfg.get('max_chunks', 4)
-        ) if context_cfg.get('compact', True) else retrieved_chunks
+        if context_cfg.get('compact', True):
+            compact_chunks = assembler.compress_context(
+                user_query,
+                retrieved_chunks,
+                max_context_chars=context_cfg.get('max_context_chars', 2600),
+                max_sentences=context_cfg.get('max_sentences', 2),
+                max_chunks_after_compaction=context_cfg.get('max_chunks', 4)
+            )
+        else:
+            compact_chunks = retrieved_chunks
         compact_ms = (time.perf_counter() - compact_start) * 1000
 
         context = (

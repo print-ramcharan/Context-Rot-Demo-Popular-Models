@@ -179,7 +179,7 @@ class EmbeddingGenerator:
         missing_indices = []
 
         for i, text in enumerate(texts):
-            if not text.strip():
+            if text is None or not str(text).strip():
                 dim = self.get_embedding_dimension()
                 results[i] = np.zeros(dim, dtype=np.float32)
                 continue
