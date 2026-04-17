@@ -85,6 +85,10 @@ class EmbeddingCache:
         )
         self._conn.commit()
 
+    def close(self):
+        with self._lock:
+            self._conn.close()
+
 class EmbeddingGenerator:
     """
     Generates dense vector embeddings for text using Sentence Transformers.
@@ -210,12 +214,6 @@ class EmbeddingGenerator:
                 if self.persistent_cache:
                     self.persistent_cache.set(self._hash_text(text), emb)
 
-        if any(r is None for r in results):
-            dim = self.get_embedding_dimension()
-            results = [
-                r if r is not None else np.zeros(dim, dtype=np.float32)
-                for r in results
-            ]
         return np.vstack(results)
     
     def get_embedding_dimension(self) -> int:
@@ -247,3 +245,7 @@ class EmbeddingGenerator:
             # Avoid division by zero
             norms[norms == 0] = 1.0
             return embeddings / norms
+
+    def close(self):
+        if self.persistent_cache:
+            self.persistent_cache.close()

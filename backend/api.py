@@ -232,12 +232,12 @@ async def upload_file(
         
         # 3. Chunk the text
         chunk_start = time.perf_counter()
-        chunks = chunker.chunk_document(text_content)
+        chunk_dicts = chunker.chunk_document(text_content)
         chunk_ms = (time.perf_counter() - chunk_start) * 1000
-        logger.info(f"Created {len(chunks)} chunks")
+        logger.info(f"Created {len(chunk_dicts)} chunks")
         
         # 4. Generate embeddings for chunks
-        chunk_texts = [chunk['text'] for chunk in chunks]
+        chunk_texts = [chunk['text'] for chunk in chunk_dicts]
         embed_start = time.perf_counter()
         embeddings = gen.embed_batch(chunk_texts, batch_size=32, show_progress=False)
         embed_ms = (time.perf_counter() - embed_start) * 1000
@@ -252,14 +252,14 @@ async def upload_file(
                 "chunk_size": chunk.get('length', len(chunk['text'])),
                 "word_count": chunk.get('word_count', len(chunk['text'].split()))
             }
-            for i, chunk in enumerate(chunks)
+            for i, chunk in enumerate(chunk_dicts)
         ]
         
         index_start = time.perf_counter()
         store.add(embeddings, chunk_texts, metadata=metadata_list)
         retriever.invalidate_cache()
         index_ms = (time.perf_counter() - index_start) * 1000
-        logger.info(f"Added {len(chunks)} chunks to vector store")
+        logger.info(f"Added {len(chunk_dicts)} chunks to vector store")
         
         # Save to disk
         save_start = time.perf_counter()
@@ -283,7 +283,7 @@ async def upload_file(
         return UploadResponse(
             status="success",
             message=f"File '{file.filename}' ingested successfully",
-            chunks_created=len(chunks),
+            chunks_created=len(chunk_dicts),
             embeddings_stored=len(embeddings),
             timings_ms=timings
         )

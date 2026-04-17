@@ -200,7 +200,8 @@ class SemanticRetriever:
         return {k: (v - min_val) / (max_val - min_val) for k, v in scores.items()}
 
     def retrieve_hybrid(self, query: str, k: int, threshold: float) -> list[dict]:
-        dense_k = min(self.dense_k, self.vector_store.index.ntotal or 0)
+        index_total = self.vector_store.index.ntotal if self.vector_store.index else 0
+        dense_k = min(self.dense_k, index_total or 0)
         dense_k = dense_k if dense_k > 0 else k
         dense_results = self.vector_store.search(
             self.embedding_generator.embed_text(query),
@@ -292,6 +293,7 @@ class SemanticRetriever:
         
         # Sort by score (assuming higher is better for ranking consistency)
         # If L2, we should sort by score ASC.
+        # Hybrid retrieval always uses higher-is-better combined scores.
         reverse_sort = True if self.mode == "hybrid" else (self.vector_store.index_type == "cosine")
         all_results.sort(key=lambda x: x['score'], reverse=reverse_sort)
         
