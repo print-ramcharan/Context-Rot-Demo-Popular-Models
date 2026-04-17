@@ -1,3 +1,5 @@
+import re
+
 class ContextAssembler:
     """
     Assembles retrieved chunks into formatted prompts for LLMs.
@@ -33,7 +35,9 @@ class ContextAssembler:
         }
     
     def assemble_prompt(self, query: str, retrieved_chunks: list[dict],
-                       template_name: str = "default") -> str:
+                       template_name: str = "default",
+                       compact: bool = False,
+                       compact_config: dict | None = None) -> str:
         """
         Create formatted prompt from query and retrieved chunks.
         
@@ -45,10 +49,21 @@ class ContextAssembler:
         Returns:
             str: Formatted prompt ready for LLM
         """
-        # 1. Truncate chunks if they exceed max length
+        # 1. Optionally compress context
+        if compact:
+            cfg = compact_config or {}
+            retrieved_chunks = self.compress_context(
+                query,
+                retrieved_chunks,
+                max_context_chars=cfg.get("max_context_chars", 2600),
+                max_sentences=cfg.get("max_sentences", 2),
+                max_chunks_after_compaction=cfg.get("max_chunks", 4)
+            )
+
+        # 2. Truncate chunks if they exceed max length
         valid_chunks = self.truncate_to_fit(retrieved_chunks, self.max_context_length)
         
-        # 2. Format context string
+        # 3. Format context string
         context_parts = []
         for i, chunk in enumerate(valid_chunks):
             meta = chunk.get('metadata', {})
@@ -62,7 +77,7 @@ class ContextAssembler:
             
         context_str = "\n\n".join(context_parts)
         
-        # 3. Apply template
+        # 4. Apply template
         template = self.templates.get(template_name, self.templates["default"])
         return template.format(context=context_str, query=query)
     
@@ -116,6 +131,53 @@ class ContextAssembler:
             current_length += chunk_len
             
         return valid_chunks
+
+    def extract_relevant_sentences(self, query: str, chunk_text: str, max_sentences: int = 2) -> str:
+        sentences = re.split(r'(?<=[.!?])\s+', chunk_text.strip())
+        if not sentences:
+            return chunk_text
+
+        query_terms = set(re.findall(r"\b\w+\b", query.lower()))
+        if not query_terms:
+            return " ".join(sentences[:max_sentences])
+
+        scored = []
+        for idx, sentence in enumerate(sentences):
+            terms = set(re.findall(r"\b\w+\b", sentence.lower()))
+            score = len(terms.intersection(query_terms))
+            scored.append((idx, score, sentence))
+
+        scored.sort(key=lambda x: (x[1], -len(x[2])), reverse=True)
+        top = sorted(scored[:max_sentences], key=lambda x: x[0])
+        if top and top[0][1] == 0:
+            return " ".join(sentences[:max_sentences])
+        return " ".join([t[2] for t in top])
+
+    def compress_context(self, query: str, chunks: list[dict],
+                         max_context_chars: int = 2600,
+                         max_sentences: int = 2,
+                         max_chunks_after_compaction: int = 4) -> list[dict]:
+        if not chunks:
+            return []
+
+        sorted_chunks = sorted(chunks, key=lambda x: x.get('score', 0), reverse=True)
+        compressed = []
+        current_len = 0
+
+        for chunk in sorted_chunks:
+            if len(compressed) >= max_chunks_after_compaction:
+                break
+            compact_text = self.extract_relevant_sentences(query, chunk.get("text", ""), max_sentences=max_sentences)
+            if not compact_text:
+                continue
+            if current_len + len(compact_text) > max_context_chars:
+                break
+            updated = dict(chunk)
+            updated["text"] = compact_text
+            compressed.append(updated)
+            current_len += len(compact_text)
+
+        return compressed
     
     def add_citations(self, response: str, 
                      chunks: list[dict]) -> dict:

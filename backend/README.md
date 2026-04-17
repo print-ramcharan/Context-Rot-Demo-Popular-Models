@@ -53,6 +53,10 @@ The backend is fully connected with the browser extension and supports:
 - `GET /list-sessions`
 - `DELETE /delete-session/{session_id}`
 - `GET /conv-stats`
+- `POST /upload` (optional `?replace_existing=true`)
+- `POST /query/rag`
+- `POST /query/standard`
+- `GET /metrics`
 
 Implemented capabilities:
 - semantic embedding generation

@@ -6,7 +6,7 @@ class TextChunker:
     Splits text into overlapping chunks for embedding and retrieval.
     """
     
-    def __init__(self, chunk_size=300, overlap=50):
+    def __init__(self, chunk_size=220, overlap=30):
         """
         Initialize chunker with size and overlap parameters.
         
@@ -19,6 +19,52 @@ class TextChunker:
         self.chunk_size = chunk_size
         self.overlap = overlap
     
+    def _normalize_and_split(self, text: str) -> list[str]:
+        """Normalize whitespace and split into words."""
+        if not text or not text.strip():
+            return []
+        text = " ".join(text.split())
+        return text.split()
+
+    def chunk_document(self, text: str) -> list[dict]:
+        """
+        Split text into word-based chunks with overlap, returning chunk metadata.
+
+        Returns:
+            list[dict]: [{'text', 'offset', 'length', 'word_count', 'chunk_index'}]
+        """
+        words = self._normalize_and_split(text)
+        if not words:
+            return []
+
+        # Precompute word offsets in normalized text
+        word_offsets = []
+        cursor = 0
+        for word in words:
+            word_offsets.append(cursor)
+            cursor += len(word) + 1  # account for single space
+
+        chunks = []
+        start = 0
+        chunk_index = 0
+        while start < len(words):
+            end = start + self.chunk_size
+            chunk_words = words[start:end]
+            chunk_text = " ".join(chunk_words)
+            offset = word_offsets[start]
+            chunks.append({
+                "text": chunk_text,
+                "offset": offset,
+                "length": len(chunk_text),
+                "word_count": len(chunk_words),
+                "chunk_index": chunk_index
+            })
+            chunk_index += 1
+
+            if end >= len(words):
+                break
+            start += (self.chunk_size - self.overlap)
+    
     def chunk_by_words(self, text: str) -> list[str]:
         """
         Split text into word-based chunks with overlap.
@@ -29,28 +75,24 @@ class TextChunker:
         Returns:
             list[str]: List of text chunks
         """
-        if not text or not text.strip():
+        words = self._normalize_and_split(text)
+        if not words:
             return []
-
-        # Normalize whitespace
-        text = " ".join(text.split())
-        words = text.split()
-        
         if len(words) <= self.chunk_size:
-            return [text]
-            
+            return [" ".join(words)]
+
         chunks = []
         start = 0
         while start < len(words):
             end = start + self.chunk_size
             chunk_words = words[start:end]
             chunks.append(" ".join(chunk_words))
-            
+
             if end >= len(words):
                 break
-                
+
             start += (self.chunk_size - self.overlap)
-            
+
         return chunks
     
     def chunk_by_sentences(self, text: str, max_words=300) -> list[str]:

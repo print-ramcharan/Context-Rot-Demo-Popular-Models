@@ -6,6 +6,7 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
+from src.chunking import TextChunker
 
 
 # ── Storage layout ────────────────────────────────────────────────────────────
@@ -96,8 +97,8 @@ class ConversationStore:
         prompt: str,
         response: str,
         embedding_generator,          # pass in the existing EmbeddingGenerator
-        chunk_size: int = 300,
-        overlap: int = 50,
+        chunk_size: int = 220,
+        overlap: int = 30,
     ) -> dict:
         """
         Chunk a prompt+response exchange, embed it, and store in FAISS.
@@ -123,14 +124,8 @@ class ConversationStore:
         # Combine prompt + response into one block with role tags
         exchange = f"[user]: {prompt.strip()}\n[assistant]: {response.strip()}"
 
-        # Simple word-based chunking (mirrors the project's existing approach)
-        words = exchange.split()
-        raw_chunks: list[str] = []
-        i = 0
-        while i < len(words):
-            chunk = " ".join(words[i : i + chunk_size])
-            raw_chunks.append(chunk)
-            i += chunk_size - overlap
+        chunker = TextChunker(chunk_size=chunk_size, overlap=overlap)
+        raw_chunks = [c["text"] for c in chunker.chunk_document(exchange)]
 
         if not raw_chunks:
             return {"chunk_count": 0, "session_id": session_id}

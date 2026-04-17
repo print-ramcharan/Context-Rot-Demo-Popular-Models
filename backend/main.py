@@ -6,6 +6,7 @@ from src.vector_store import VectorStore
 from src.retrieval import SemanticRetriever
 from src.context_assembly import ContextAssembler
 from src.inference import LLMInference
+from src.reranker import CrossEncoderReranker
 from conversation_store import ConversationStore
 
 conv_store = ConversationStore(storage_dir="conversations")
@@ -37,22 +38,26 @@ class ExternalMemorySystem:
         # 1. Chunker
         chunk_cfg = self.config.get('chunking', {})
         self.chunker = TextChunker(
-            chunk_size=chunk_cfg.get('chunk_size', 300),
-            overlap=chunk_cfg.get('overlap', 50)
+            chunk_size=chunk_cfg.get('chunk_size', 220),
+            overlap=chunk_cfg.get('overlap', 30)
         )
         
         # 2. Embedding Generator
         emb_cfg = self.config.get('embedding', {})
         self.embedding_generator = EmbeddingGenerator(
             model_name=emb_cfg.get('model_name', "all-MiniLM-L6-v2"),
-            device=emb_cfg.get('device', 'cpu')
+            device=emb_cfg.get('device', 'cpu'),
+            cache_path=emb_cfg.get('cache_path', "cache/embeddings.sqlite"),
+            cache_max_items=emb_cfg.get('cache_max_items', 200000),
+            cache_enabled=emb_cfg.get('cache_enabled', True)
         )
         
         # 3. Vector Store
         dim = self.embedding_generator.get_embedding_dimension()
+        storage_cfg = self.config.get('storage', {})
         self.vector_store = VectorStore(
             dimension=dim,
-            index_type="cosine" 
+            index_type=storage_cfg.get('index_type', "cosine") 
         )
         
         # 4. Retriever
@@ -61,19 +66,37 @@ class ExternalMemorySystem:
             vector_store=self.vector_store,
             embedding_generator=self.embedding_generator,
             top_k=ret_cfg.get('top_k', 3),
-            similarity_threshold=ret_cfg.get('similarity_threshold', 0.0)
+            similarity_threshold=ret_cfg.get('similarity_threshold', 0.0),
+            mode=ret_cfg.get('mode', "semantic"),
+            dense_k=ret_cfg.get('dense_k', 30),
+            bm25_k=ret_cfg.get('bm25_k', 30),
+            alpha=ret_cfg.get('alpha', 0.65),
+            enable_rerank=ret_cfg.get('rerank_enabled', False),
+            rerank_top_n=ret_cfg.get('rerank_top_n', 6),
+            rerank_candidate_pool=ret_cfg.get('rerank_candidate_pool', 30),
+            query_cache_ttl_s=ret_cfg.get('query_cache_ttl_s', 300),
+            query_cache_max_items=ret_cfg.get('query_cache_max_items', 10000)
         )
+        if ret_cfg.get('rerank_enabled', False):
+            self.retriever.set_reranker(
+                CrossEncoderReranker(model_name=ret_cfg.get('rerank_model', "cross-encoder/ms-marco-MiniLM-L-6-v2"))
+            )
         
         # 5. Context Assembler
-        self.assembler = ContextAssembler()
+        context_cfg = self.config.get('context', {})
+        self.assembler = ContextAssembler(
+            max_context_length=context_cfg.get('max_context_chars', 4000)
+        )
         
         # 6. LLM Inference
         llm_cfg = self.config.get('llm', {})
         provider = llm_cfg.get('provider', 'ollama')
+        provider_cfg = llm_cfg.get(provider, {})
+        provider_cfg = {**provider_cfg, "semantic_cache": llm_cfg.get("semantic_cache", {})}
         self.llm = LLMInference(
             provider=provider,
-            model=llm_cfg.get(provider, {}).get('model'),
-            config=llm_cfg.get(provider, {})
+            model=provider_cfg.get('model'),
+            config=provider_cfg
         )
     
     def ingest_document(self, text: str, source: str = None, 
@@ -82,8 +105,8 @@ class ExternalMemorySystem:
         Process and store a document in external memory.
         """
         # 1. Chunk
-        chunks = self.chunker.chunk_by_words(text)
-        if not chunks:
+        chunk_dicts = self.chunker.chunk_document(text)
+        if not chunk_dicts:
             return {
                 'chunks_created': 0,
                 'embeddings_stored': 0,
@@ -91,8 +114,11 @@ class ExternalMemorySystem:
                 'file_type': file_type,
                 'message': 'No text content found to ingest'
             }
+        chunks = [c["text"] for c in chunk_dicts]
         metadata = self.chunker.get_chunk_metadata(chunks)
-        for m in metadata:
+        for m, chunk_info in zip(metadata, chunk_dicts):
+            m['char_offset'] = chunk_info.get('offset', 0)
+            m['char_length'] = chunk_info.get('length', 0)
             if source: m['source'] = source
             m['file_type'] = file_type
             m['extension'] = extension
@@ -102,6 +128,7 @@ class ExternalMemorySystem:
         
         # 3. Store
         self.vector_store.add(embeddings, chunks, metadata)
+        self.retriever.invalidate_cache()
         
         # 4. Auto-save
         self.save_memory(self.persistence_path)
@@ -183,7 +210,18 @@ class ExternalMemorySystem:
         retrieved_chunks = self.retriever.retrieve(question, k=k)
         
         # 2. Assemble Prompt
-        prompt = self.assembler.assemble_prompt(question, retrieved_chunks, template_name=template)
+        context_cfg = self.config.get('context', {})
+        prompt = self.assembler.assemble_prompt(
+            question,
+            retrieved_chunks,
+            template_name=template,
+            compact=context_cfg.get('compact', True),
+            compact_config={
+                'max_context_chars': context_cfg.get('max_context_chars', 2600),
+                'max_sentences': context_cfg.get('max_sentences', 2),
+                'max_chunks': context_cfg.get('max_chunks', 4)
+            }
+        )
         
         # 3. Inference
         llm_response = self.llm.generate(prompt)
@@ -207,6 +245,7 @@ class ExternalMemorySystem:
     def load_memory(self, path: str):
         """Load vector store from disk."""
         self.vector_store.load(path)
+        self.retriever.invalidate_cache()
     
     def get_statistics(self) -> dict:
         """
@@ -219,4 +258,3 @@ class ExternalMemorySystem:
             'llm_model': self.llm.model
         })
         return stats
-
