@@ -6,6 +6,7 @@ import re
 import time
 from collections import OrderedDict
 import logging
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +152,8 @@ class SemanticRetriever:
         threshold = threshold if threshold is not None else self.similarity_threshold
         mode = mode or self.mode
 
-        cache_key = (query, k, threshold, mode, self._cache_generation)
+        query_key = hashlib.sha256(query.encode("utf-8")).hexdigest()
+        cache_key = (query_key, k, threshold, mode, self._cache_generation)
         if use_cache:
             cached = self._query_cache.get(cache_key)
             if cached is not None:
@@ -207,11 +209,12 @@ class SemanticRetriever:
             self.embedding_generator.embed_text(query),
             k=dense_k
         )
-        dense_scores = {
+        dense_raw_scores = {
             idx: dense_results['distances'][i]
             for i, idx in enumerate(dense_results['indices'])
             if idx != -1
         }
+        dense_scores = dict(dense_raw_scores)
         if self.vector_store.index_type != "cosine":
             # Convert L2 distance to similarity: higher distance -> lower similarity.
             dense_scores = {idx: 1 / (1 + score) for idx, score in dense_scores.items()}
@@ -244,8 +247,14 @@ class SemanticRetriever:
             if idx >= len(self.vector_store.chunks):
                 continue
             dense_score = dense_scores.get(idx, None)
-            if dense_score is not None and threshold > 0 and dense_score < threshold:
-                continue
+            if threshold > 0 and dense_score is not None:
+                if self.vector_store.index_type == "cosine":
+                    if dense_score < threshold:
+                        continue
+                else:
+                    raw_distance = dense_raw_scores.get(idx, None)
+                    if raw_distance is not None and raw_distance > threshold:
+                        continue
             retrieved_items.append({
                 'text': self.vector_store.chunks[idx],
                 'score': score,

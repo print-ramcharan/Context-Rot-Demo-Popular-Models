@@ -1,10 +1,10 @@
 import re
 
 class ContextAssembler:
-    ABBREVIATIONS = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Sr.", "Jr.", "vs.", "e.g.", "i.e."]
     """
     Assembles retrieved chunks into formatted prompts for LLMs.
     """
+    ABBREVIATIONS = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Sr.", "Jr.", "vs.", "e.g.", "i.e."]
     
     def __init__(self, max_context_length: int = 4000):
         """

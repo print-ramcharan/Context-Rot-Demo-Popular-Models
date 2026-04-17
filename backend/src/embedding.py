@@ -214,9 +214,6 @@ class EmbeddingGenerator:
                 if self.persistent_cache:
                     self.persistent_cache.set(self._hash_text(text), emb)
 
-        if all(r is None for r in results):
-            dim = self.get_embedding_dimension()
-            return np.zeros((0, dim), dtype=np.float32)
         return np.vstack(results)
     
     def get_embedding_dimension(self) -> int:

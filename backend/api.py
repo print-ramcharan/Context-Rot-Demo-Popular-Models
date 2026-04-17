@@ -207,6 +207,7 @@ async def upload_file(
     Upload and ingest a file into the vector store.
     Automatically chunks, embeds, and updates FAISS index in memory.
     """
+    file_path = None
     try:
         logger.info(f"Received file: {file.filename}")
         
@@ -236,6 +237,8 @@ async def upload_file(
         chunk_ms = (time.perf_counter() - chunk_start) * 1000
         logger.info(f"Created {len(chunk_dicts)} chunks")
         if not chunk_dicts:
+            if file_path and file_path.exists():
+                file_path.unlink()
             raise ValueError("No chunks created from uploaded content")
         
         # 4. Generate embeddings for chunks
@@ -291,6 +294,8 @@ async def upload_file(
         )
         
     except Exception as e:
+        if file_path and file_path.exists():
+            file_path.unlink()
         logger.error(f"Upload error: {str(e)}")
         raise HTTPException(
             status_code=400,
