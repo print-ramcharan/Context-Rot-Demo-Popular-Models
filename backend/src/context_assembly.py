@@ -1,8 +1,7 @@
 import re
 
-ABBREVIATIONS = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Sr.", "Jr.", "vs.", "e.g.", "i.e."]
-
 class ContextAssembler:
+    ABBREVIATIONS = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Sr.", "Jr.", "vs.", "e.g.", "i.e."]
     """
     Assembles retrieved chunks into formatted prompts for LLMs.
     """
@@ -158,7 +157,7 @@ class ContextAssembler:
     def _split_sentences(self, text: str) -> list[str]:
         placeholder = "<DOT>"
         safe_text = text
-        for abbr in ABBREVIATIONS:
+        for abbr in self.ABBREVIATIONS:
             safe_text = safe_text.replace(abbr, abbr.replace(".", placeholder))
         sentences = re.split(r'(?<=[.!?])\s+', safe_text.strip())
         return [s.replace(placeholder, ".").strip() for s in sentences if s.strip()]

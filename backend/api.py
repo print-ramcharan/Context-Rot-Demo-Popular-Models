@@ -235,6 +235,8 @@ async def upload_file(
         chunk_dicts = chunker.chunk_document(text_content)
         chunk_ms = (time.perf_counter() - chunk_start) * 1000
         logger.info(f"Created {len(chunk_dicts)} chunks")
+        if not chunk_dicts:
+            raise ValueError("No chunks created from uploaded content")
         
         # 4. Generate embeddings for chunks
         chunk_texts = [chunk['text'] for chunk in chunk_dicts]

@@ -228,7 +228,8 @@ class LLMInference:
             if cached:
                 cached['model'] = self.model
                 cached['provider'] = self.provider
-                cached['latency_ms'] = 0
+                cached['latency_ms'] = (time.time() - start_time) * 1000
+                cached['cache_hit'] = True
                 return cached
         
         if self.provider == "ollama":
@@ -247,6 +248,7 @@ class LLMInference:
         latency = (time.time() - start_time) * 1000
         result['latency_ms'] = latency
         result['provider'] = self.provider
+        result['cache_hit'] = False
         if self.semantic_cache:
             self.semantic_cache.store(prompt, result)
         

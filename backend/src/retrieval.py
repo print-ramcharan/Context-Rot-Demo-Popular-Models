@@ -58,7 +58,7 @@ class BM25Index:
                 tf = doc_tokens.count(token)
                 if tf == 0:
                     continue
-                denom = tf + self.k1 * (1 - self.b + self.b * (self.doc_len[i] / (self.avgdl or 1.0)))
+                denom = tf + self.k1 * (1 - self.b + self.b * (self.doc_len[i] / self.avgdl))
                 scores[i] += idf * ((tf * (self.k1 + 1)) / denom)
         return scores
 
@@ -213,6 +213,7 @@ class SemanticRetriever:
             if idx != -1
         }
         if self.vector_store.index_type != "cosine":
+            # Convert L2 distance to similarity: higher distance -> lower similarity.
             dense_scores = {idx: 1 / (1 + score) for idx, score in dense_scores.items()}
 
         self.build_lexical_index()
