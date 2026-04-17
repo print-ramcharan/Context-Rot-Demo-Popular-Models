@@ -188,10 +188,20 @@ export default function FileDropzone({ onUpload }) {
 
         {/* Text */}
         <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
-          {isUploading && `Indexing ${fileName}…`}
-          {isError && 'Upload failed — please try again'}
-          {!isUploading && !isError && (dragActive ? 'Drop to upload' : 'Drop a document, or click to browse')}
+          {isUploading ? (
+            progress >= 90 
+              ? `Finalizing index for ${fileName}...` 
+              : `Indexing ${fileName}…`
+          ) : (
+            isError ? 'Upload failed — please try again' : (dragActive ? 'Drop to upload' : 'Drop a document, or click to browse')
+          )}
         </p>
+        
+        {isUploading && progress >= 90 && (
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px', animation: 'pulse 2s infinite' }}>
+            Generating embeddings... This can take up to a minute for massive files like War and Peace.
+          </p>
+        )}
 
         {!isUploading && !isError && (
           <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>

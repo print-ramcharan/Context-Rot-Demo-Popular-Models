@@ -75,8 +75,13 @@ gemini_cfg = llm_cfg.get('gemini', {})
 # ── Initialize AI Components ──────────────────────────────────────────────────
 conv_store = ConversationStore(storage_dir="conversations")
 
-store = VectorStore(dimension=384)
-gen = EmbeddingGenerator()
+# Initialize components with optimized performance settings
+# ----------------------------------------------------------------------------
+store = VectorStore(dimension=384, index_type="cosine")
+gen = EmbeddingGenerator(model_name="all-MiniLM-L6-v2")
+# Increase top_k to 10 for better accuracy on sparse details in large documents
+retriever = SemanticRetriever(store, gen, top_k=10)
+chunker = TextChunker(chunk_size=1024, overlap=150)
 
 # Single model used for BOTH paths — the only variable is the context strategy:
 #   Standard: dumps the entire document (naive full-context stuffing)
@@ -88,11 +93,10 @@ llm = LLMInference(
     config=gemini_cfg
 )
 
-retriever = SemanticRetriever(store, gen, top_k=5)
-chunker = TextChunker(chunk_size=1024, overlap=150)
+# Define index storage path
+INDEX_PATH = "memory_index"
 
 # Load existing index if it exists (DISABLED for clean demo)
-# INDEX_PATH = "memory_index"
 # if os.path.exists(INDEX_PATH) and os.path.exists(os.path.join(INDEX_PATH, "index.faiss")):
 #     try:
 #         store.load(INDEX_PATH)
@@ -279,7 +283,8 @@ async def handle_query_rag(request: QueryRequest):
 
         logger.info(f"Processing RAG query: {user_query[:100]}...")
 
-        retrieved_chunks = retriever.retrieve(user_query, k=5)
+        # Retrieve top 10 chunks (increased for large documents like War and Peace)
+        retrieved_chunks = retriever.retrieve(user_query, k=10)
         context = (
             "\n\n".join([chunk['text'] for chunk in retrieved_chunks])
             if retrieved_chunks else "(No context retrieved)"
