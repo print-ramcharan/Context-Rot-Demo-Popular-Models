@@ -1,7 +1,7 @@
 chunking:
-  # Tuned for shorter word-based chunks to reduce prompt size while preserving overlap.
-  chunk_size: 220
-  overlap: 30
+  # Larger chunks keep scenes/paragraphs together so answers don't split across boundaries.
+  chunk_size: 400
+  overlap: 80
 
 embedding:
   model_name: "all-MiniLM-L6-v2"
@@ -12,11 +12,11 @@ embedding:
 
 retrieval:
   mode: "hybrid"
-  top_k: 5
-  similarity_threshold: 0.1
+  top_k: 15
+  similarity_threshold: 0.05
   dense_k: 30
   bm25_k: 30
-  alpha: 0.65
+  alpha: 0.4
   rerank_enabled: false
   rerank_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
   rerank_top_n: 6
@@ -26,9 +26,9 @@ retrieval:
 
 context:
   compact: true
-  max_context_chars: 2600
-  max_sentences: 2
-  max_chunks: 4
+  max_context_chars: 8000
+  max_sentences: 8
+  max_chunks: 12
 
 storage:
   index_path: "memory_index"

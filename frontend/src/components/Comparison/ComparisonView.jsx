@@ -13,43 +13,88 @@ function SkeletonRow({ width = '100%', delay = 0 }) {
   );
 }
 
-/* ── Streaming text that reveals word-by-word ── */
-function StreamingText({ text }) {
-  const [displayed, setDisplayed] = useState('');
+/* ── Custom Markdown-lite Renderer ── */
+function MarkdownRenderer({ text }) {
+  if (!text) return null;
 
-  useEffect(() => {
-    if (!text) return;
-    setDisplayed('');
-    const words = text.split(' ');
-    let idx = 0;
-    const interval = setInterval(() => {
-      idx++;
-      setDisplayed(words.slice(0, idx).join(' '));
-      if (idx >= words.length) clearInterval(interval);
-    }, 18);
-    return () => clearInterval(interval);
-  }, [text]);
+  // Split into lines
+  const lines = text.split('\n');
+  const blocks = [];
+  let currentList = null;
+
+  const parseInline = (line) => {
+    const parts = line.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i}>{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
+  };
+
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+
+    // Check for list item
+    if (trimmed.startsWith('* ') || trimmed.startsWith('- ') || /^\d+\./.test(trimmed)) {
+      const content = trimmed.replace(/^[\*\-\d\.]+\s+/, '');
+      if (!currentList) {
+        currentList = [];
+        blocks.push({ type: 'list', items: currentList });
+      }
+      currentList.push(parseInline(content));
+    } else if (trimmed === '') {
+      currentList = null;
+      blocks.push({ type: 'spacer', key: idx });
+    } else {
+      currentList = null;
+      blocks.push({ type: 'p', content: parseInline(line) });
+    }
+  });
 
   return (
-    <p style={{
+    <div className="markdown-content">
+      {blocks.map((block, i) => {
+        if (block.type === 'list') {
+          return (
+            <ul key={i}>
+              {block.items.map((item, j) => <li key={j}>{item}</li>)}
+            </ul>
+          );
+        }
+        if (block.type === 'spacer') {
+          return <div key={block.key} style={{ height: '8px' }} />;
+        }
+        return <p key={i}>{block.content}</p>;
+      })}
+    </div>
+  );
+}
+
+/* ── Real-time streaming text ── */
+function StreamingText({ text, done }) {
+  return (
+    <div style={{
       fontSize: '13.5px',
-      lineHeight: '1.75',
+      lineHeight: '1.7',
       color: 'var(--text-secondary)',
-      whiteSpace: 'pre-wrap',
       fontFamily: 'inherit',
     }}>
-      {displayed}
-      {displayed.length < text.length && (
-        <span style={{
+      <MarkdownRenderer text={text} />
+      {!done && (
+        <span className="streaming-cursor" style={{
           display: 'inline-block',
-          width: '2px', height: '14px',
+          width: '2.5px', height: '15px',
           background: 'var(--purple-400)',
-          marginLeft: '2px',
-          verticalAlign: 'text-bottom',
-          animation: 'pulseDot 0.8s ease-in-out infinite',
+          marginLeft: '4px',
+          verticalAlign: 'middle',
+          marginTop: '-2px',
+          borderRadius: '4px',
+          boxShadow: '0 0 8px var(--purple-400)',
+          animation: 'cursorPulse 0.8s ease-in-out infinite',
         }} />
       )}
-    </p>
+    </div>
   );
 }
 
@@ -158,7 +203,7 @@ function ResponsePane({ type, title, subtitle, icon: Icon, response, loading, so
               <SkeletonRow width="60%" delay={320} />
             </>
           ) : response?.text ? (
-            <StreamingText text={response.text} />
+            <StreamingText text={response.text} done={!loading} />
           ) : (
             <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
               No response yet. Upload a document and ask a question.

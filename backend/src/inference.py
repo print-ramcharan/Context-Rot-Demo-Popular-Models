@@ -351,7 +351,76 @@ class LLMInference:
         
     def _generate_gemini(self, prompt: str, max_tokens: int, 
                          temperature: float) -> dict:
-        """Generate using Google Gemini API."""
+        """Generate using Google Gemini API with automatic retry for rate limits."""
+        import google.generativeai as genai
+        
+        generation_config = genai.types.GenerationConfig(
+            max_output_tokens=max_tokens,
+            temperature=temperature
+        )
+        
+        max_retries = 5
+        base_wait = 2.0  # seconds
+        
+        for attempt in range(max_retries + 1):
+            try:
+                response = self.client.generate_content(
+                    prompt,
+                    generation_config=generation_config
+                )
+                
+                # Check if response has text (might be blocked by safety filters)
+                try:
+                    text = response.text
+                except ValueError:
+                    # If the response doesn't contain text, check if it's because it was blocked
+                    if response.candidates:
+                        text = "[Blocked by safety filter or other candidate issue]"
+                    else:
+                        text = "[No response generated]"
+                
+                # Extract usage info if available
+                usage = getattr(response, 'usage_metadata', None)
+                tokens = {
+                    'prompt': usage.prompt_token_count if usage else 0,
+                    'completion': usage.candidates_token_count if usage else 0,
+                    'total': usage.total_token_count if usage else 0
+                }
+                
+                return {
+                    'response': text,
+                    'model': self.model,
+                    'tokens_used': tokens
+                }
+            except Exception as e:
+                error_str = str(e)
+                # Aggressive retry on rate limit (429) errors for Free Tier
+                if "429" in error_str and attempt < max_retries:
+                    wait_time = base_wait * (1.5 ** attempt) # Slightly gentler growth
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        f"!!! RATE LIMIT HIT (429) !!! Attempt {attempt + 1}/{max_retries + 1}. "
+                        f"Retrying in {wait_time:.1f}s... (Free Tier RPM is very low)"
+                    )
+                    time.sleep(wait_time)
+                    continue
+                raise RuntimeError(f"Gemini generation failed: {e}")
+    
+    async def stream_generate(self, prompt: str, max_tokens: int = 1000, 
+                        temperature: float = 0.7):
+        """
+        Asynchronous generator yielding response chunks from LLM.
+        """
+        if self.provider == "gemini":
+            async for chunk in self._stream_generate_gemini_async(prompt, max_tokens, temperature):
+                yield chunk
+        else:
+            # Fallback for providers that don't support streaming yet
+            res = self.generate(prompt, max_tokens, temperature)
+            yield {"text": res["response"], "tokens": res["tokens_used"], "done": True}
+
+    async def _stream_generate_gemini_async(self, prompt: str, max_tokens: int, temperature: float):
+        """Asynchronous stream using Google Gemini API."""
         import google.generativeai as genai
         
         generation_config = genai.types.GenerationConfig(
@@ -360,39 +429,35 @@ class LLMInference:
         )
         
         try:
-            response = self.client.generate_content(
+            # Using the async version of generate_content
+            response_stream = await self.client.generate_content_async(
                 prompt,
-                generation_config=generation_config
+                generation_config=generation_config,
+                stream=True
             )
             
-            # Check if response has text (might be blocked by safety filters)
-            try:
-                text = response.text
-            except ValueError:
-                # If the response doesn't contain text, check if it's because it was blocked
-                if response.candidates:
-                    text = "[Blocked by safety filter or other candidate issue]"
-                else:
-                    text = "[No response generated]"
+            async for chunk in response_stream:
+                try:
+                    chunk_text = chunk.text
+                    yield {"text": chunk_text, "done": False}
+                except (ValueError, Exception):
+                    # Occurs if response is blocked by safety filters
+                    yield {"text": "[Chunk blocked]", "done": False}
             
-            # Extract usage info if available
-            usage = getattr(response, 'usage_metadata', None)
+            # Final metadata
+            usage = getattr(response_stream, 'usage_metadata', None)
             tokens = {
                 'prompt': usage.prompt_token_count if usage else 0,
                 'completion': usage.candidates_token_count if usage else 0,
                 'total': usage.total_token_count if usage else 0
             }
-            
-            return {
-                'response': text,
-                'model': self.model,
-                'tokens_used': tokens
-            }
+            yield {"tokens": tokens, "done": True}
+
         except Exception as e:
-            raise RuntimeError(f"Gemini generation failed: {e}")
-    
-    def generate_with_retry(self, prompt: str, max_retries: int = 3,
-                           backoff: float = 1.0, **kwargs) -> dict:
+            yield {"error": str(e), "done": True}
+
+    def generate_with_retry(self, prompt: str, max_retries: int = 3, 
+                            backoff: float = 1.0, **kwargs) -> dict:
         """
         Generate with exponential backoff retry logic.
         """

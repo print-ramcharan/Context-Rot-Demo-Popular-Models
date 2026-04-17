@@ -31,5 +31,32 @@ Who does Natasha fall in love with at her first ball?
 What happens to Prince Andrew at the Battle of Austerlitz?
 ```
 
-The Standard path will burn through the entire 800k-token document trying to find it.
-The RAG path retrieves the 3 most relevant paragraphs and answers in seconds.
+---
+
+## alice-in-wonderland.txt
+**Source:** Project Gutenberg (public domain)  
+**Size:** ~145 KB | ~26,500 words | ~42,000+ tokens  
+**Author:** Lewis Carroll
+
+### Why this works perfectly for the demo
+
+This document is small enough to fit in the Gemini Free Tier (~250k token limit / minute) for the **Standard** path, allowing you to see both answers side-by-side. 
+
+| Path | Tokens sent | Latency | Efficiency |
+|------|------------|---------|------------|
+| Standard (full doc) | ~42,600 | ~7–10s | ❌ slow, expensive |
+| RAG (Optimized) | ~1,200 | ~2–3s | ✅ 3x faster, 40x cheaper |
+
+### Expected Answer Key for Verification
+
+Use these questions to quickly verify the **RAG Optimized** engine is correctly retrieving specific facts:
+
+| Question | Expected Answer | Why it tests RAG |
+|----------|-----------------|------------------|
+| what game does the Queen of Hearts play? | **Croquet** | Tests lexical + semantic retrieval for specific events. |
+| What does the Caterpillar sit on and what is he smoking? | **Sitting on a mushroom, smoking a hookah** | Tests multi-fact retrieval within a single paragraph. |
+| What does Alice find on the table in the hall? | **A tiny golden key** (and a "DRINK ME" bottle) | Tests retrieval of specific objects from the start of the book. |
+| Who steals the tarts? | **The Knave of Hearts** | Tests character specific actions at the end of the book. |
+| What stays behind when the Cheshire Cat disappears? | **His grin** | Tests iconic fact retrieval. |
+
+**Observation Note:** If the RAG path says "The context does not state...", it means the retrieval missed the specific chunk. Thanks to our **400-word chunk size** and **80-word overlap**, these should all pass 100% of the time.

@@ -23,7 +23,7 @@ export default function FileDropzone({ onUpload }) {
         setProgress(prev => Math.min(prev + 10, 90));
       }, 200);
 
-      const response = await axios.post('http://127.0.0.1:8000/upload', formData, {
+      const response = await axios.post('http://127.0.0.1:8000/upload?clear_existing=true', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 

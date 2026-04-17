@@ -232,3 +232,50 @@
     font-size: 0.8em;
   }
 }
+
+/* ── Markdown Content Styling ── */
+.markdown-content p {
+  margin: 0 0 12px 0;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+  display: inline; /* Keep cursor inline with last paragraph */
+}
+
+.markdown-content ul, .markdown-content ol {
+  margin: 12px 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.markdown-content li {
+  position: relative;
+  list-style: none;
+  padding-left: 4px;
+}
+
+.markdown-content li::before {
+  content: "•";
+  position: absolute;
+  left: -16px;
+  color: var(--emerald-400);
+  font-weight: bold;
+}
+
+.markdown-content strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* ── Streaming Cursor ── */
+@keyframes cursorPulse {
+  0%, 100% { opacity: 1; transform: scaleY(1); }
+  50% { opacity: 0; transform: scaleY(0.7); }
+}
+
+.streaming-cursor {
+  box-shadow: 0 0 12px var(--purple-400);
+}

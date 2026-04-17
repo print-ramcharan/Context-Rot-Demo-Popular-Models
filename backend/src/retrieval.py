@@ -16,7 +16,8 @@ def _tokenize(text: str) -> list[str]:
 class BM25Index:
     """
     BM25 lexical index for fast keyword-based scoring.
-    Uses standard k1/b parameters for term saturation and length normalization.
+    Uses an inverted index for O(1) term lookups instead of linear scans.
+    Standard k1/b parameters for term saturation and length normalization.
     """
     def __init__(self, texts: list[str], k1: float = 1.5, b: float = 0.75):
         self.texts = texts
@@ -25,19 +26,29 @@ class BM25Index:
         self.doc_freq = {}
         self.doc_len = []
         self.avgdl = 0.0
-        self.doc_tokens = []
+        self.inverted_index = {}  # {token: {doc_idx: tf}}
         self._build()
 
     def _build(self):
         total_len = 0
-        for text in self.texts:
+        for doc_idx, text in enumerate(self.texts):
             tokens = _tokenize(text)
-            self.doc_tokens.append(tokens)
             self.doc_len.append(len(tokens))
             total_len += len(tokens)
-            unique_tokens = set(tokens)
-            for token in unique_tokens:
-                self.doc_freq[token] = self.doc_freq.get(token, 0) + 1
+
+            # Count term frequencies for this document in a single pass
+            tf_map = {}
+            for token in tokens:
+                tf_map[token] = tf_map.get(token, 0) + 1
+
+            # Populate inverted index and document frequency
+            for token, tf in tf_map.items():
+                if token not in self.inverted_index:
+                    self.inverted_index[token] = {}
+                    self.doc_freq[token] = 0
+                self.inverted_index[token][doc_idx] = tf
+                self.doc_freq[token] += 1
+
         self.avgdl = (total_len / len(self.texts)) if self.texts else 0.0
 
     def score(self, query: str) -> list[float]:
@@ -51,16 +62,14 @@ class BM25Index:
             return scores
         total_docs = len(self.texts)
         for token in tokens:
-            df = self.doc_freq.get(token, 0)
-            if df == 0:
+            if token not in self.inverted_index:
                 continue
+            df = self.doc_freq[token]
             idf = math.log(1 + (total_docs - df + 0.5) / (df + 0.5))
-            for i, doc_tokens in enumerate(self.doc_tokens):
-                tf = doc_tokens.count(token)
-                if tf == 0:
-                    continue
-                denom = tf + self.k1 * (1 - self.b + self.b * (self.doc_len[i] / self.avgdl))
-                scores[i] += idf * ((tf * (self.k1 + 1)) / denom)
+            # Only iterate over documents that actually contain this token
+            for doc_idx, tf in self.inverted_index[token].items():
+                denom = tf + self.k1 * (1 - self.b + self.b * (self.doc_len[doc_idx] / self.avgdl))
+                scores[doc_idx] += idf * ((tf * (self.k1 + 1)) / denom)
         return scores
 
 class QueryCache:
@@ -203,67 +212,90 @@ class SemanticRetriever:
         return {k: (v - min_val) / (max_val - min_val) for k, v in scores.items()}
 
     def retrieve_hybrid(self, query: str, k: int, threshold: float) -> list[dict]:
-        index_total = self.vector_store.index.ntotal if self.vector_store.index else 0
-        dense_k = min(self.dense_k, index_total or 0)
-        dense_k = dense_k if dense_k > 0 else k
-        dense_results = self.vector_store.search(
-            self.embedding_generator.embed_text(query),
-            k=dense_k
-        )
-        dense_raw_scores = {
-            idx: dense_results['distances'][i]
-            for i, idx in enumerate(dense_results['indices'])
-            if idx != -1
-        }
-        dense_scores = dict(dense_raw_scores)
-        if self.vector_store.index_type != "cosine":
-            # Convert L2 distance to similarity using a reciprocal transform.
-            # This maps smaller distances to higher similarity while bounding values in (0, 1].
-            dense_scores = {idx: 1 / (1 + score) for idx, score in dense_scores.items()}
+        """
+        Hybrid retrieval using Reciprocal Rank Fusion (RRF) to combine
+        dense (semantic) and sparse (BM25) rankings without broken
+        score normalization.
+        """
+        import concurrent.futures
 
-        self.build_lexical_index()
-        bm25_scores_list = self._bm25_index.score(query) if self._bm25_index else []
-        bm25_scores = {}
+        # Phase 1: Prepare for search (Parallelizable)
+        # We need the embedding for dense search and the index for lexical search
+        query_emb = None
+        
+        def run_dense_search():
+            nonlocal query_emb
+            query_emb = self.embedding_generator.embed_text(query)
+            index_total = self.vector_store.index.ntotal if self.vector_store.index else 0
+            dense_k = min(self.dense_k, index_total or 0)
+            dense_k = dense_k if dense_k > 0 else k
+            return self.vector_store.search(query_emb, k=dense_k)
+
+        def run_lexical_search():
+            self.build_lexical_index()
+            return self._bm25_index.score(query) if self._bm25_index else []
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            future_dense = executor.submit(run_dense_search)
+            future_lexical = executor.submit(run_lexical_search)
+            
+            dense_results = future_dense.result()
+            bm25_scores_list = future_lexical.result()
+
+        # Build dense rank and score maps
+        dense_rank_map = {}
+        dense_score_map = {}
+        for rank, idx in enumerate(dense_results['indices']):
+            if idx != -1:
+                dense_rank_map[idx] = rank
+                dense_score_map[idx] = dense_results['distances'][rank]
+
+        # Build BM25 rank map
+        bm25_rank_map = {}
         if bm25_scores_list:
-            top_indices = sorted(
+            bm25_ranked_indices = sorted(
                 range(len(bm25_scores_list)),
                 key=lambda i: bm25_scores_list[i],
                 reverse=True
-            )[: self.bm25_k]
-            bm25_scores = {
-                idx: bm25_scores_list[idx]
-                for idx in top_indices
-                if bm25_scores_list[idx] > 0
-            }
+            )
+            for rank, idx in enumerate(bm25_ranked_indices[:self.bm25_k]):
+                if bm25_scores_list[idx] > 0:
+                    bm25_rank_map[idx] = rank
 
-        dense_norm = self._normalize_scores(dense_scores)
-        bm25_norm = self._normalize_scores(bm25_scores)
+        # --- Reciprocal Rank Fusion ---
+        # RRF_K is the standard constant (typically 60) that prevents
+        # top-ranked documents from dominating the fusion score.
+        RRF_K = 60
+        MISSING_RANK = max(self.dense_k, self.bm25_k) + 1
 
-        combined = {}
-        for idx in set(dense_norm) | set(bm25_norm):
-            combined[idx] = (self.alpha * dense_norm.get(idx, 0.0)) + ((1 - self.alpha) * bm25_norm.get(idx, 0.0))
+        all_candidate_ids = set(dense_rank_map.keys()) | set(bm25_rank_map.keys())
 
-        ranked = sorted(combined.items(), key=lambda x: x[1], reverse=True)
+        rrf_scores = {}
+        for idx in all_candidate_ids:
+            d_rank = dense_rank_map.get(idx, MISSING_RANK)
+            b_rank = bm25_rank_map.get(idx, MISSING_RANK)
+            rrf_scores[idx] = (1.0 / (RRF_K + d_rank)) + (1.0 / (RRF_K + b_rank))
+
+        ranked = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
+
         retrieved_items = []
         for rank, (idx, score) in enumerate(ranked[:k]):
             if idx >= len(self.vector_store.chunks):
                 continue
-            dense_score = dense_scores.get(idx, None)
+
+            # Apply similarity threshold on the original dense score if available
+            dense_score = dense_score_map.get(idx, None)
             if threshold > 0 and dense_score is not None:
-                if self.vector_store.index_type == "cosine":
-                    if dense_score < threshold:
-                        continue
-                else:
-                    raw_distance = dense_raw_scores.get(idx, None)
-                    if raw_distance is not None and raw_distance > threshold:
-                        continue
+                if self.vector_store.index_type == "cosine" and dense_score < threshold:
+                    continue
+
             retrieved_items.append({
                 'text': self.vector_store.chunks[idx],
                 'score': score,
                 'metadata': self.vector_store.metadata[idx],
                 'rank': rank,
                 'dense_score': dense_score,
-                'bm25_score': bm25_scores.get(idx, 0.0)
+                'bm25_score': bm25_scores_list[idx] if idx < len(bm25_scores_list) else 0.0
             })
 
         return self._apply_rerank(query, retrieved_items)

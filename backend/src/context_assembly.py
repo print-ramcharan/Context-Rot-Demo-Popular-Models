@@ -1,11 +1,19 @@
 import re
 
+# Pre-compiled patterns for performance
+_WORD_PATTERN = re.compile(r"\b\w+\b")
+_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[.!?])\s+')
+
 class ContextAssembler:
     """
     Assembles retrieved chunks into formatted prompts for LLMs.
     """
     # Minimal abbreviation list; extend for domain-specific content as needed.
     ABBREVIATIONS = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Sr.", "Jr.", "vs.", "e.g.", "i.e."]
+    STOP_WORDS = {
+        "is", "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "with", 
+        "of", "by", "from", "as", "it", "its", "they", "them", "their", "this", "that"
+    }
     
     def __init__(self, max_context_length: int = 4000):
         """
@@ -135,32 +143,66 @@ class ContextAssembler:
         return valid_chunks
 
     def extract_relevant_sentences(self, query: str, chunk_text: str, max_sentences: int = 2) -> str:
-        sentences = self._split_sentences(chunk_text)
-        if not sentences:
+        """
+        Extract the most query-relevant sentences from a chunk.
+        Short chunks are returned intact to avoid shearing off critical context.
+        When filtering, adjacent sentences are included for continuity.
+        """
+        # Short chunks: return as-is to avoid destroying context
+        if len(chunk_text) <= 500:
             return chunk_text
 
-        query_terms = set(re.findall(r"\b\w+\b", query.lower()))
-        if not query_terms:
+        sentences = self._split_sentences(chunk_text)
+        if not sentences or len(sentences) <= max_sentences:
+            return chunk_text
+
+        query_terms = set(_WORD_PATTERN.findall(query.lower()))
+        # Filter out common stop words to focus on content-bearing terms
+        relevant_query_terms = {term for term in query_terms if term not in self.STOP_WORDS}
+        
+        if not relevant_query_terms:
+            # If everything was a stop word, use original terms as fallback
+            relevant_query_terms = query_terms
+            
+        if not relevant_query_terms:
             return " ".join(sentences[:max_sentences])
 
         scored = []
         for idx, sentence in enumerate(sentences):
-            terms = set(re.findall(r"\b\w+\b", sentence.lower()))
-            score = len(terms.intersection(query_terms))
+            terms = set(_WORD_PATTERN.findall(sentence.lower()))
+            score = len(terms.intersection(relevant_query_terms))
             scored.append((idx, score, sentence))
 
+        # If no query term matches at all, return the first N sentences
         if all(score == 0 for _, score, _ in scored):
             return " ".join(sentences[:max_sentences])
+
+        # Sort by relevance score descending, then by original position
         scored.sort(key=lambda x: (-x[1], x[0]))
-        top = sorted(scored[:max_sentences], key=lambda x: x[0])
-        return " ".join([t[2] for t in top])
+
+        # Collect top sentence indices AND their neighbors for context continuity
+        selected_indices = set()
+        for idx, score, _ in scored:
+            if len(selected_indices) >= max_sentences:
+                break
+            if score > 0:
+                selected_indices.add(idx)
+                # Include adjacent sentences to preserve surrounding context
+                if idx > 0:
+                    selected_indices.add(idx - 1)
+                if idx < len(sentences) - 1:
+                    selected_indices.add(idx + 1)
+
+        # Sort by original position and join
+        ordered = sorted(selected_indices)[:max_sentences + 2]  # Allow slight overflow for neighbors
+        return " ".join([sentences[i] for i in ordered if i < len(sentences)])
 
     def _split_sentences(self, text: str) -> list[str]:
         placeholder = "<<CONTEXT_ROT_DOT>>"
         safe_text = text
         for abbr in self.ABBREVIATIONS:
             safe_text = safe_text.replace(abbr, abbr.replace(".", placeholder))
-        sentences = re.split(r'(?<=[.!?])\s+', safe_text.strip())
+        sentences = _SENTENCE_SPLIT_PATTERN.split(safe_text.strip())
         return [s.replace(placeholder, ".").strip() for s in sentences if s.strip()]
 
     def compress_context(self, query: str, chunks: list[dict],

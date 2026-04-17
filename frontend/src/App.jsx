@@ -251,6 +251,91 @@ export default function App() {
     setError('');
   };
 
+  const streamQuery = async (endpoint, type) => {
+    try {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_query: query })
+      });
+
+      if (!response.ok) throw new Error(`${type} query failed`);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep partial line in buffer
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+            
+            if (data.type === 'metadata') {
+              setResponses(prev => ({
+                ...prev,
+                [type]: { 
+                  ...prev[type], 
+                  model: data.model,
+                  context_used: data.context_used,
+                  text: (prev[type]?.text || '') // Ensure text is preserved or initialized
+                }
+              }));
+              if (type === 'rag' && data.sources) setSources(data.sources);
+            } 
+            else if (data.type === 'text') {
+              setResponses(prev => ({
+                ...prev,
+                [type]: { 
+                  ...prev[type], 
+                  text: (prev[type]?.text || '') + (data.text || '')
+                }
+              }));
+            } 
+            else if (data.type === 'final') {
+              setResponses(prev => ({
+                ...prev,
+                [type]: { 
+                  ...prev[type], 
+                  tokens_used: data.tokens,
+                  latency_ms: data.latency_ms
+                }
+              }));
+            }
+            else if (data.type === 'error') {
+              throw new Error(data.detail);
+            }
+          } catch (e) {
+            console.error("Error parsing stream line:", e);
+            if (e.message && e.message !== 'Unexpected end of JSON input') {
+               throw e; // Re-throw to be caught by outer catch if it's a logic error
+            }
+          }
+        }
+      }
+    } catch (err) {
+      const message = err.message || 'Error occurred';
+      setResponses(prev => ({ 
+        ...prev, 
+        [type]: { 
+          ...prev[type],
+          text: `Error: ${message}`,
+          error: true
+        } 
+      }));
+    } finally {
+      if (type === 'standard') setLoadingStandard(false);
+      else setLoadingRag(false);
+    }
+  };
+
   const handleQuery = async (e) => {
     e.preventDefault();
     if (!query.trim()) {
@@ -264,28 +349,9 @@ export default function App() {
     setResponses({ standard: null, rag: null });
     setSources([]);
 
-    axios.post(`${API_BASE}/query/standard`, { user_query: query })
-      .then(({ data }) => {
-        if (data.status !== 'success') throw new Error(data.detail || 'Standard query failed');
-        setResponses(prev => ({ ...prev, standard: data.response }));
-      })
-      .catch(err => {
-        const message = err?.response?.data?.detail || err.message || 'Error occurred';
-        setResponses(prev => ({ ...prev, standard: { text: `Error: ${message}` } }));
-      })
-      .finally(() => setLoadingStandard(false));
-
-    axios.post(`${API_BASE}/query/rag`, { user_query: query })
-      .then(({ data }) => {
-        if (data.status !== 'success') throw new Error(data.detail || 'RAG query failed');
-        setResponses(prev => ({ ...prev, rag: data.response }));
-        if (data.sources) setSources(data.sources);
-      })
-      .catch(err => {
-        const message = err?.response?.data?.detail || err.message || 'Error occurred';
-        setResponses(prev => ({ ...prev, rag: { text: `Error: ${message}` } }));
-      })
-      .finally(() => setLoadingRag(false));
+    // Run both queries simultaneously (Genuine Race)
+    streamQuery('/query/standard', 'standard');
+    streamQuery('/query/rag', 'rag');
   };
 
   return (
