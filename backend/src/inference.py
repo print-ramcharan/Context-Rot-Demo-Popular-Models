@@ -98,7 +98,9 @@ class LLMInference:
                 embedding_generator=EmbeddingGenerator(
                     model_name=cache_cfg.get("embedding_model", "all-MiniLM-L6-v2"),
                     device=cache_cfg.get("device", "cpu"),
-                    cache_enabled=False
+                    cache_path=cache_cfg.get("cache_path", "cache/semantic_embeddings.sqlite"),
+                    cache_max_items=cache_cfg.get("cache_max_items", 200000),
+                    cache_enabled=cache_cfg.get("cache_enabled", True)
                 ),
                 similarity_threshold=cache_cfg.get("similarity_threshold", 0.92),
                 ttl_s=cache_cfg.get("ttl_s", 1800),

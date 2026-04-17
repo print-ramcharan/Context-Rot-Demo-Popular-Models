@@ -152,6 +152,7 @@ class SemanticRetriever:
         threshold = threshold if threshold is not None else self.similarity_threshold
         mode = mode or self.mode
 
+        # Cache key includes threshold/mode to keep results consistent with filters.
         query_key = hashlib.sha256(query.encode("utf-8")).hexdigest()
         cache_key = (query_key, k, threshold, mode, self._cache_generation)
         if use_cache:
@@ -216,7 +217,8 @@ class SemanticRetriever:
         }
         dense_scores = dict(dense_raw_scores)
         if self.vector_store.index_type != "cosine":
-            # Convert L2 distance to similarity: higher distance -> lower similarity.
+            # Convert L2 distance to similarity using a reciprocal transform.
+            # This maps smaller distances to higher similarity while bounding values in (0, 1].
             dense_scores = {idx: 1 / (1 + score) for idx, score in dense_scores.items()}
 
         self.build_lexical_index()

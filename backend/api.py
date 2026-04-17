@@ -208,6 +208,7 @@ async def upload_file(
     Automatically chunks, embeds, and updates FAISS index in memory.
     """
     file_path = None
+    cleanup_on_error = False
     try:
         logger.info(f"Received file: {file.filename}")
         
@@ -222,6 +223,7 @@ async def upload_file(
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         logger.info(f"Saved file to {file_path}")
+        cleanup_on_error = True
         
         # 2. Extract text from file
         extract_start = time.perf_counter()
@@ -237,8 +239,6 @@ async def upload_file(
         chunk_ms = (time.perf_counter() - chunk_start) * 1000
         logger.info(f"Created {len(chunk_dicts)} chunks")
         if not chunk_dicts:
-            if file_path and file_path.exists():
-                file_path.unlink()
             raise ValueError("No chunks created from uploaded content")
         
         # 4. Generate embeddings for chunks
@@ -294,8 +294,8 @@ async def upload_file(
         )
         
     except Exception as e:
-        if file_path and file_path.exists():
-            file_path.unlink()
+        if cleanup_on_error:
+            _cleanup_file(file_path)
         logger.error(f"Upload error: {str(e)}")
         raise HTTPException(
             status_code=400,
@@ -547,6 +547,10 @@ def _extract_text_from_file(file_path: Path, filename: str) -> str:
     except Exception as e:
         logger.error(f"Error extracting text from {filename}: {str(e)}")
         return ""
+
+def _cleanup_file(path: Path | None):
+    if path and path.exists():
+        path.unlink()
 
 
  

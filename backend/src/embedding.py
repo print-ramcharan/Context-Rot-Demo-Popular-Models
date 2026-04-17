@@ -6,6 +6,9 @@ import sqlite3
 import time
 import threading
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 class EmbeddingCache:
     """
@@ -186,6 +189,7 @@ class EmbeddingGenerator:
             if text is None or not str(text).strip():
                 dim = self.get_embedding_dimension()
                 results[i] = np.zeros(dim, dtype=np.float32)
+                logger.debug("Empty text provided for embedding; returning zero vector.")
                 continue
             if text in self.cache:
                 results[i] = self.cache[text]

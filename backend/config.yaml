@@ -1,4 +1,5 @@
 chunking:
+  # Tuned for shorter word-based chunks to reduce prompt size while preserving overlap.
   chunk_size: 220
   overlap: 30
 
@@ -70,6 +71,9 @@ llm:
     enabled: false
     embedding_model: "all-MiniLM-L6-v2"
     device: "cpu"
+    cache_path: "cache/semantic_embeddings.sqlite"
+    cache_max_items: 200000
+    cache_enabled: true
     similarity_threshold: 0.92
     ttl_s: 1800
     max_items: 1000

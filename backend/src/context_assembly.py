@@ -4,6 +4,7 @@ class ContextAssembler:
     """
     Assembles retrieved chunks into formatted prompts for LLMs.
     """
+    # Minimal abbreviation list; extend for domain-specific content as needed.
     ABBREVIATIONS = ["Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Sr.", "Jr.", "vs.", "e.g.", "i.e."]
     
     def __init__(self, max_context_length: int = 4000):
@@ -155,7 +156,7 @@ class ContextAssembler:
         return " ".join([t[2] for t in top])
 
     def _split_sentences(self, text: str) -> list[str]:
-        placeholder = "<DOT>"
+        placeholder = "<<CONTEXT_ROT_DOT>>"
         safe_text = text
         for abbr in self.ABBREVIATIONS:
             safe_text = safe_text.replace(abbr, abbr.replace(".", placeholder))
