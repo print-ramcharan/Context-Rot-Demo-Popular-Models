@@ -64,6 +64,8 @@ class TextChunker:
             if end >= len(words):
                 break
             start += (self.chunk_size - self.overlap)
+
+        return chunks
     
     def chunk_by_words(self, text: str) -> list[str]:
         """
