@@ -2,6 +2,72 @@ import os
 import time
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+import numpy as np
+from src.embedding import EmbeddingGenerator
+
+class SemanticCache:
+    """
+    In-memory semantic cache using embedding similarity.
+    """
+
+    def __init__(self, embedding_generator: EmbeddingGenerator,
+                 similarity_threshold: float = 0.92,
+                 ttl_s: int = 1800,
+                 max_items: int = 1000):
+        self.embedding_generator = embedding_generator
+        self.similarity_threshold = similarity_threshold
+        self.ttl_s = ttl_s
+        self.max_items = max_items
+        self._entries: list[dict] = []
+
+    def _prune(self):
+        now = time.time()
+        self._entries = [
+            e for e in self._entries
+            if now - e["timestamp"] <= self.ttl_s
+        ]
+        if len(self._entries) > self.max_items:
+            self._entries = self._entries[-self.max_items:]
+
+    def lookup(self, prompt: str) -> dict | None:
+        if not self._entries:
+            return None
+        query_emb = self.embedding_generator.embed_text(prompt)
+        norm = np.linalg.norm(query_emb)
+        if norm == 0:
+            return None
+        query_emb = query_emb / norm
+        best = None
+        best_score = -1.0
+        now = time.time()
+        for entry in self._entries:
+            if now - entry["timestamp"] > self.ttl_s:
+                continue
+            score = float(np.dot(query_emb, entry["embedding"]))
+            if score > best_score:
+                best = entry
+                best_score = score
+        if best and best_score >= self.similarity_threshold:
+            return {
+                "response": best["response"],
+                "tokens_used": best.get("tokens_used", {}),
+                "cached": True
+            }
+        return None
+
+    def store(self, prompt: str, response: dict):
+        emb = self.embedding_generator.embed_text(prompt)
+        norm = np.linalg.norm(emb)
+        if norm == 0:
+            return
+        emb = emb / norm
+        self._entries.append({
+            "embedding": emb,
+            "response": response.get("response", ""),
+            "tokens_used": response.get("tokens_used", {}),
+            "timestamp": time.time()
+        })
+        self._prune()
 
 class LLMInference:
     """
@@ -25,6 +91,21 @@ class LLMInference:
         self.model = model or self._get_default_model()
         self.client = None
         self.tokenizer = None # For HuggingFace
+        self.semantic_cache = None
+        cache_cfg = self.config.get("semantic_cache", {})
+        if cache_cfg.get("enabled", False):
+            self.semantic_cache = SemanticCache(
+                embedding_generator=EmbeddingGenerator(
+                    model_name=cache_cfg.get("embedding_model", "all-MiniLM-L6-v2"),
+                    device=cache_cfg.get("device", "cpu"),
+                    cache_path=cache_cfg.get("cache_path", "cache/semantic_embeddings.sqlite"),
+                    cache_max_items=cache_cfg.get("cache_max_items", 200000),
+                    cache_enabled=cache_cfg.get("cache_enabled", True)
+                ),
+                similarity_threshold=cache_cfg.get("similarity_threshold", 0.92),
+                ttl_s=cache_cfg.get("ttl_s", 1800),
+                max_items=cache_cfg.get("max_items", 1000)
+            )
         self._initialize_client()
     
     def _get_default_model(self) -> str:
@@ -143,6 +224,15 @@ class LLMInference:
         Generate response from LLM.
         """
         start_time = time.time()
+
+        if self.semantic_cache:
+            cached = self.semantic_cache.lookup(prompt)
+            if cached:
+                cached['model'] = self.model
+                cached['provider'] = self.provider
+                cached['latency_ms'] = (time.time() - start_time) * 1000
+                cached['cache_hit'] = True
+                return cached
         
         if self.provider == "ollama":
             result = self._generate_ollama(prompt, max_tokens, temperature)
@@ -160,6 +250,9 @@ class LLMInference:
         latency = (time.time() - start_time) * 1000
         result['latency_ms'] = latency
         result['provider'] = self.provider
+        result['cache_hit'] = False
+        if self.semantic_cache:
+            self.semantic_cache.store(prompt, result)
         
         return result
     
