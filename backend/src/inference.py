@@ -33,7 +33,10 @@ class SemanticCache:
         if not self._entries:
             return None
         query_emb = self.embedding_generator.embed_text(prompt)
-        query_emb = query_emb / (np.linalg.norm(query_emb) or 1.0)
+        norm = np.linalg.norm(query_emb)
+        if norm == 0:
+            return None
+        query_emb = query_emb / norm
         best = None
         best_score = -1.0
         now = time.time()
@@ -54,7 +57,10 @@ class SemanticCache:
 
     def store(self, prompt: str, response: dict):
         emb = self.embedding_generator.embed_text(prompt)
-        emb = emb / (np.linalg.norm(emb) or 1.0)
+        norm = np.linalg.norm(emb)
+        if norm == 0:
+            return
+        emb = emb / norm
         self._entries.append({
             "embedding": emb,
             "response": response.get("response", ""),

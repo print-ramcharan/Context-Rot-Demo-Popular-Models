@@ -10,6 +10,10 @@ def _tokenize(text: str) -> list[str]:
     return re.findall(r"\b\w+\b", text.lower())
 
 class BM25Index:
+    """
+    BM25 lexical index for fast keyword-based scoring.
+    Uses standard k1/b parameters for term saturation and length normalization.
+    """
     def __init__(self, texts: list[str], k1: float = 1.5, b: float = 0.75):
         self.texts = texts
         self.k1 = k1
@@ -54,6 +58,9 @@ class BM25Index:
         return scores
 
 class QueryCache:
+    """
+    LRU-style cache with TTL for retrieval results.
+    """
     def __init__(self, max_items: int = 10000, ttl_s: int = 300):
         self.max_items = max_items
         self.ttl_s = ttl_s
@@ -230,7 +237,7 @@ class SemanticRetriever:
             if idx >= len(self.vector_store.chunks):
                 continue
             dense_score = dense_scores.get(idx, None)
-            if self.vector_store.index_type == "cosine" and dense_score is not None and dense_score < threshold:
+            if dense_score is not None and threshold > 0 and dense_score < threshold:
                 continue
             retrieved_items.append({
                 'text': self.vector_store.chunks[idx],

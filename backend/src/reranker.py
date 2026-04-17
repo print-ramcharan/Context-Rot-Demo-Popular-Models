@@ -30,6 +30,7 @@ class CrossEncoderReranker:
         reranked = []
         for candidate, score in zip(candidates, scores):
             updated = dict(candidate)
+            updated["original_score"] = candidate.get("score")
             updated["rerank_score"] = float(score)
             updated["score"] = float(score)
             reranked.append(updated)

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from src.inference import LLMInference 
@@ -76,7 +76,7 @@ def load_config(path: str = "config.yaml") -> dict:
 config = load_config()
 llm_cfg = config.get('llm', {})
 gemini_cfg = llm_cfg.get('gemini', {})
-llm_shared_cfg = {**gemini_cfg, "semantic_cache": llm_cfg.get("semantic_cache", {})}
+gemini_with_cache_cfg = {**gemini_cfg, "semantic_cache": llm_cfg.get("semantic_cache", {})}
 chunk_cfg = config.get('chunking', {})
 embedding_cfg = config.get('embedding', {})
 retrieval_cfg = config.get('retrieval', {})
@@ -134,13 +134,13 @@ assembler = ContextAssembler(
 llm_standard = LLMInference(
     provider="gemini",
     model="models/gemini-2.5-flash",
-    config=llm_shared_cfg
+    config=gemini_with_cache_cfg
 )
 
 llm_rag = LLMInference(
     provider="gemini",
     model="models/gemini-2.5-flash",
-    config=llm_shared_cfg
+    config=gemini_with_cache_cfg
 )
 
 # Define index storage path
@@ -199,7 +199,10 @@ def health():
 # ============================================================================
 
 @app.post("/upload", response_model=UploadResponse)
-async def upload_file(file: UploadFile = File(...), replace_existing: bool = False):
+async def upload_file(
+    file: UploadFile = File(...),
+    clear_existing_data: bool = Query(False, alias="replace_existing")
+):
     """
     Upload and ingest a file into the vector store.
     Automatically chunks, embeds, and updates FAISS index in memory.
@@ -208,7 +211,7 @@ async def upload_file(file: UploadFile = File(...), replace_existing: bool = Fal
         logger.info(f"Received file: {file.filename}")
         
         # 0. Optionally clear previous store data to ensure clean comparison
-        if replace_existing:
+        if clear_existing_data:
             store.clear()
             retriever.invalidate_cache()
             logger.info("Cleared previous vector store data")

@@ -4,6 +4,7 @@ import torch
 import hashlib
 import sqlite3
 import time
+import threading
 from pathlib import Path
 
 class EmbeddingCache:
@@ -15,6 +16,7 @@ class EmbeddingCache:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.max_items = max_items
+        self._lock = threading.Lock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._initialize()
 
@@ -34,12 +36,13 @@ class EmbeddingCache:
         self._conn.commit()
 
     def get(self, cache_key: str) -> np.ndarray | None:
-        cursor = self._conn.cursor()
-        cursor.execute(
-            "SELECT embedding, dim FROM embeddings WHERE cache_key = ?",
-            (cache_key,)
-        )
-        row = cursor.fetchone()
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                "SELECT embedding, dim FROM embeddings WHERE cache_key = ?",
+                (cache_key,)
+            )
+            row = cursor.fetchone()
         if not row:
             return None
         blob, dim = row
@@ -48,16 +51,17 @@ class EmbeddingCache:
 
     def set(self, cache_key: str, embedding: np.ndarray):
         embedding = embedding.astype(np.float32)
-        cursor = self._conn.cursor()
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO embeddings (cache_key, embedding, dim, updated_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (cache_key, embedding.tobytes(), embedding.shape[0], time.time())
-        )
-        self._conn.commit()
-        self._prune()
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO embeddings (cache_key, embedding, dim, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (cache_key, embedding.tobytes(), embedding.shape[0], time.time())
+            )
+            self._conn.commit()
+            self._prune()
 
     def _prune(self):
         if self.max_items <= 0:
@@ -206,6 +210,12 @@ class EmbeddingGenerator:
                 if self.persistent_cache:
                     self.persistent_cache.set(self._hash_text(text), emb)
 
+        if any(r is None for r in results):
+            dim = self.get_embedding_dimension()
+            results = [
+                r if r is not None else np.zeros(dim, dtype=np.float32)
+                for r in results
+            ]
         return np.vstack(results)
     
     def get_embedding_dimension(self) -> int:

@@ -147,10 +147,10 @@ class ContextAssembler:
             score = len(terms.intersection(query_terms))
             scored.append((idx, score, sentence))
 
-        scored.sort(key=lambda x: (x[1], -len(x[2])), reverse=True)
-        top = sorted(scored[:max_sentences], key=lambda x: x[0])
-        if top and top[0][1] == 0:
+        if all(score == 0 for _, score, _ in scored):
             return " ".join(sentences[:max_sentences])
+        scored.sort(key=lambda x: (-x[1], x[0]))
+        top = sorted(scored[:max_sentences], key=lambda x: x[0])
         return " ".join([t[2] for t in top])
 
     def compress_context(self, query: str, chunks: list[dict],
