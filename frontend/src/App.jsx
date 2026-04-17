@@ -88,7 +88,7 @@ function HomePage({ onEnterApp }) {
           Stop Context Rot.<br />Enhance Your RAG.
         </h1>
         <p className="hero-description animate-reveal stagger-2">
-          A dual-path evaluation studio designed to compare standard LLM responses 
+          A dual-path evaluation studio designed to compare standard LLM responses
           against high-precision RAG architectures in real-time.
         </p>
         <div className="hero-actions animate-reveal stagger-3">
@@ -114,36 +114,6 @@ function HomePage({ onEnterApp }) {
         </div>
       </section>
 
-      <section className="authors-section">
-        <div className="section-label animate-reveal">MEET THE ARCHITECTS</div>
-        <div className="authors-grid">
-          <div className="author-card animate-reveal stagger-1">
-            <div className="author-avatar">R</div>
-            <div className="author-info">
-              <h3 className="font-heading">Ram Charan</h3>
-              <p className="author-role">Lead Engineer</p>
-              <p className="author-bio">Specializing in distributed systems and LLM orchestration. Visionary behind Context Rot Lab.</p>
-              <div className="social-links">
-                <a href="https://github.com/print-ramcharan" className="social-link"><Github size={18} /></a>
-                <a href="#" className="social-link"><Mail size={18} /></a>
-              </div>
-            </div>
-          </div>
-          <div className="author-card animate-reveal stagger-2">
-            <div className="author-avatar">V</div>
-            <div className="author-info">
-              <h3 className="font-heading">Varsha</h3>
-              <p className="author-role">AI Researcher</p>
-              <p className="author-bio">Expert in vector databases and retrieval optimization. Fine-tuning the RAG experience.</p>
-              <div className="social-links">
-                <a href="#" className="social-link"><Github size={18} /></a>
-                <a href="#" className="social-link"><Mail size={18} /></a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className="cta-section animate-reveal" style={{ padding: '80px 0', textAlign: 'center' }}>
         <div className="glass-container" style={{ padding: '60px', overflow: 'hidden', position: 'relative' }}>
           <h2 className="hero-title" style={{ fontSize: '48px', marginBottom: '16px' }}>Ready to optimize your context?</h2>
@@ -153,7 +123,7 @@ function HomePage({ onEnterApp }) {
           </button>
         </div>
       </section>
-      
+
       <Footer />
     </div>
   );
@@ -199,7 +169,7 @@ function WorkspacePage({
           </h3>
           <FileDropzone onUpload={onFileUpload} />
         </div>
-        
+
         <div className="premium-card" style={{ opacity: documentUploaded ? 1 : 0.5, transition: 'opacity 0.3s' }}>
           <h3 className="font-heading" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <MessageSquare size={18} /> 2. Expert Query
@@ -236,7 +206,7 @@ function WorkspacePage({
           )}
         </div>
       </div>
-      
+
       <div style={{ marginTop: '80px' }}>
         <Footer />
       </div>
