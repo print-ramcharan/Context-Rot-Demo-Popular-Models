@@ -138,8 +138,8 @@ assembler = ContextAssembler(
     max_context_length=context_cfg.get('max_context_chars', 6000)
 )
 
-# Use stable model to avoid quota/not found issues
-STABLE_MODEL = "models/gemini-3.1-flash-lite-preview"
+# Use flash-lite for demo: weaker with large context, generous free-tier RPM
+STABLE_MODEL = "models/gemini-2.5-flash-lite"
 
 llm_standard = LLMInference(
     provider="gemini",
@@ -228,7 +228,11 @@ async def upload_file(
         
         # Pre-build lexical index for immediate query readiness
         retriever.build_lexical_index()
-        logger.info(f"Pre-built BM25 index for {len(chunk_dicts)} chunks")
+        
+        # Warm up embedding model for headstart
+        gen.embed_text("headstart warmup")
+        
+        logger.info(f"Pre-built BM25 index and warmed up embedding model for {len(chunk_dicts)} chunks")
         
         latency = (time.perf_counter() - extract_start) * 1000
         

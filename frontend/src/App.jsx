@@ -372,13 +372,11 @@ export default function App() {
     setResponses({ standard: null, rag: null });
     setSources([]);
 
-    // Run RAG immediately so it secures the unthrottled connection
-    streamQuery('/query/rag', 'rag');
-    
-    // Stagger the massive baseline payload slightly so Free API doesn't queue RAG behind it
-    setTimeout(() => {
-      streamQuery('/query/standard', 'standard');
-    }, 1000);
+    // Run RAG first with the full rate-limit window (no contention)
+    // Then fire Standard only after RAG completes, so they don't
+    // fight over free-tier Gemini RPM and cause 429 retry storms
+    await streamQuery('/query/rag', 'rag');
+    streamQuery('/query/standard', 'standard');
   };
 
   return (
