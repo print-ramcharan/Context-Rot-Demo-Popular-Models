@@ -160,17 +160,35 @@ class ContextAssembler:
         # Filter out common stop words to focus on content-bearing terms
         relevant_query_terms = {term for term in query_terms if term not in self.STOP_WORDS}
         
-        if not relevant_query_terms:
-            # If everything was a stop word, use original terms as fallback
-            relevant_query_terms = query_terms
+        # Verb root mapping for common RAG queries
+        VERB_ROOTS = {"find": "found", "finds": "found", "found": "find", "get": "got", "gets": "got"}
+        enriched_terms = set(relevant_query_terms)
+        for term in relevant_query_terms:
+            if term in VERB_ROOTS:
+                enriched_terms.add(VERB_ROOTS[term])
+        
+        if not enriched_terms:
+            enriched_terms = query_terms
             
-        if not relevant_query_terms:
+        if not enriched_terms:
             return " ".join(sentences[:max_sentences])
 
         scored = []
         for idx, sentence in enumerate(sentences):
-            terms = set(_WORD_PATTERN.findall(sentence.lower()))
-            score = len(terms.intersection(relevant_query_terms))
+            sentence_lower = sentence.lower()
+            terms = set(_WORD_PATTERN.findall(sentence_lower))
+            
+            # Exact match score
+            exact_matches = len(terms.intersection(enriched_terms))
+            
+            # Prefix match for robustness
+            prefix_matches = 0
+            for q_term in enriched_terms:
+                if len(q_term) < 4: continue
+                if any(q_term[:4] in s_term for s_term in terms if len(s_term) > 3):
+                    prefix_matches += 0.5
+            
+            score = exact_matches + prefix_matches
             scored.append((idx, score, sentence))
 
         # If no query term matches at all, return the first N sentences
@@ -187,14 +205,15 @@ class ContextAssembler:
                 break
             if score > 0:
                 selected_indices.add(idx)
-                # Include adjacent sentences to preserve surrounding context
-                if idx > 0:
-                    selected_indices.add(idx - 1)
-                if idx < len(sentences) - 1:
-                    selected_indices.add(idx + 1)
+                # Include MORE adjacent sentences to preserve surrounding context
+                # RAG needs the "story" flow to be accurate.
+                for offset in [-1, 1, 2]:
+                    neighbor = idx + offset
+                    if 0 <= neighbor < len(sentences):
+                        selected_indices.add(neighbor)
 
         # Sort by original position and join
-        ordered = sorted(selected_indices)[:max_sentences + 2]  # Allow slight overflow for neighbors
+        ordered = sorted(selected_indices)[:max_sentences + 4]  # Allow larger overflow for neighbors
         return " ".join([sentences[i] for i in ordered if i < len(sentences)])
 
     def _split_sentences(self, text: str) -> list[str]:
@@ -216,10 +235,21 @@ class ContextAssembler:
         compressed = []
         current_len = 0
 
-        for chunk in sorted_chunks:
+        for i, chunk in enumerate(sorted_chunks):
             if len(compressed) >= max_chunks_after_compaction:
                 break
-            compact_text = self.extract_relevant_sentences(query, chunk.get("text", ""), max_sentences=max_sentences)
+            
+            # If a chunk is highly relevant (rank 0 or 1), or has a very high score,
+            # we keep more of it to ensure precision.
+            score = chunk.get("score", 0)
+            rank = chunk.get("rank", i)
+            
+            if rank < 2 or score > 0.04:  # RRF scores > 0.04 are typically very strong
+                current_max_sentences = max_sentences + 4
+            else:
+                current_max_sentences = max_sentences
+
+            compact_text = self.extract_relevant_sentences(query, chunk.get("text", ""), max_sentences=current_max_sentences)
             if not compact_text:
                 continue
             if current_len + len(compact_text) > max_context_chars:

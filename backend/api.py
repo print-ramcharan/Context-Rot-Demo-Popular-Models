@@ -155,7 +155,7 @@ if storage_cfg.get('auto_load', True) and os.path.exists(INDEX_PATH):
 
 def format_standard_prompt(query: str, context: str) -> str:
     return f"""You are a precise assistant. Below is the entire document content. 
-Answer the user's question accurately based ON THIS DOCUMENT. 
+Answer the user's question accurately based ON THIS DOCUMENT. Provide a detailed and complete answer. 
 If the information is not present, say so.
 
 <DOCUMENT>
@@ -166,7 +166,7 @@ Question: {query}
 Answer:"""
 
 def format_rag_prompt(query: str, context: str) -> str:
-    return f"""Answer the question concisely using ONLY the provided context. If the answer is not in the context, say you don't know.
+    return f"""Answer the question accurately and comprehensively using ONLY the provided context. Ensure you include all relevant details found in the context (like keys, labels, or objects). If the answer is not in the context, say you don't know.
 
 <CONTEXT>
 {context}
@@ -238,9 +238,7 @@ async def handle_query_standard(request: QueryRequest):
             total_start = time.perf_counter()
             user_query = request.user_query.strip()
             
-            # Artificial head start for RAG demonstration purposes
-            import asyncio
-            await asyncio.sleep(2.0)
+            # We use genuine latency here to provide an honest comparison
             
             yield json.dumps({"type": "metadata", "model": llm_standard.model}) + "\n"
 
@@ -277,13 +275,16 @@ async def handle_query_rag(request: QueryRequest):
                 k=retrieval_cfg.get('top_k', 10)
             )
             retrieve_time = (time.perf_counter() - retrieve_start) * 1000
+            
+            # Deduplicate chunks to prevent redundant context
+            retrieved_chunks = retriever.deduplicate_chunks(retrieved_chunks, overlap_threshold=0.7)
 
             compact_chunks = assembler.compress_context(
                 user_query, 
                 retrieved_chunks,
-                max_context_chars=context_cfg.get('max_context_chars', 4000),
-                max_sentences=context_cfg.get('max_sentences', 5),
-                max_chunks_after_compaction=context_cfg.get('max_chunks', 6)
+                max_context_chars=context_cfg.get('max_context_chars', 6000),
+                max_sentences=context_cfg.get('max_sentences', 8),
+                max_chunks_after_compaction=context_cfg.get('max_chunks', 10)
             )
             context = "\n\n".join([c.get('text', '') for c in compact_chunks])
             

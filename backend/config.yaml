@@ -16,7 +16,7 @@ retrieval:
   similarity_threshold: 0.05
   dense_k: 25
   bm25_k: 25
-  alpha: 0.4
+  alpha: 0.5  # Balanced hybrid retrieval
   rerank_enabled: false
   rerank_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
   rerank_top_n: 6
@@ -26,9 +26,9 @@ retrieval:
 
 context:
   compact: true
-  max_context_chars: 5000
-  max_sentences: 5
-  max_chunks: 8
+  max_context_chars: 6000
+  max_sentences: 8
+  max_chunks: 10
 
 storage:
   index_path: "memory_index"

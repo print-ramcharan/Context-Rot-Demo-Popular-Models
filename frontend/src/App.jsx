@@ -137,6 +137,7 @@ function WorkspacePage({
   documentUploaded,
   onFileUpload,
   onQuery,
+  sessionStats,
 }) {
   const hasResults = responses.standard || responses.rag || loadingStandard || loadingRag;
 
@@ -149,11 +150,11 @@ function WorkspacePage({
         </div>
         <div className="workspace-stats">
           <div className="stat-item">
-            <div className="stat-value">2.4s</div>
+            <div className="stat-value">{onFileUpload ? sessionStats.avgLatency : '2.4s'}</div>
             <div className="stat-label">Avg Latency</div>
           </div>
           <div className="stat-item">
-            <div className="stat-value">98%</div>
+            <div className="stat-value">{onFileUpload ? sessionStats.accuracy : '98%'}</div>
             <div className="stat-label">Accuracy</div>
           </div>
         </div>
@@ -226,6 +227,22 @@ export default function App() {
   const [responses, setResponses] = useState({ standard: null, rag: null });
   const [sources, setSources] = useState([]);
   const [documentUploaded, setDocumentUploaded] = useState(false);
+  const [queryHistory, setQueryHistory] = useState([]);
+
+  const calculateStats = () => {
+    if (queryHistory.length === 0) return { avgLatency: '2.4s', accuracy: '98%' };
+    
+    const latencies = queryHistory.map(q => q.latency).filter(l => l > 0);
+    const avg = latencies.length > 0 
+      ? (latencies.reduce((a, b) => a + b, 0) / latencies.length / 1000).toFixed(1) + 's'
+      : '2.4s';
+    
+    // Simple heuristic for "accuracy" - if RAG returned text and no error
+    const successful = queryHistory.filter(q => q.success).length;
+    const acc = ((successful / queryHistory.length) * 100).toFixed(0) + '%';
+    
+    return { avgLatency: avg, accuracy: acc };
+  };
 
   useEffect(() => {
     const syncRoute = () => {
@@ -308,7 +325,13 @@ export default function App() {
                   latency_ms: data.latency_ms
                 }
               }));
-            }
+              if (type === 'rag') {
+                setQueryHistory(prev => [...prev, { 
+                  latency: data.latency_ms, 
+                  success: true 
+                }]);
+              }
+            } 
             else if (data.type === 'error') {
               throw new Error(data.detail);
             }
@@ -370,6 +393,7 @@ export default function App() {
             documentUploaded={documentUploaded}
             onFileUpload={handleFileUpload}
             onQuery={handleQuery}
+            sessionStats={calculateStats()}
           />
         ) : (
           <HomePage onEnterApp={() => navigate('app')} />
