@@ -372,9 +372,13 @@ export default function App() {
     setResponses({ standard: null, rag: null });
     setSources([]);
 
-    // Run both queries simultaneously (Genuine Race)
-    streamQuery('/query/standard', 'standard');
+    // Run RAG immediately so it secures the unthrottled connection
     streamQuery('/query/rag', 'rag');
+    
+    // Stagger the massive baseline payload slightly so Free API doesn't queue RAG behind it
+    setTimeout(() => {
+      streamQuery('/query/standard', 'standard');
+    }, 1000);
   };
 
   return (

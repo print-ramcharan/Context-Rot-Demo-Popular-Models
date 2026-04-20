@@ -12,21 +12,21 @@ embedding:
 
 retrieval:
   mode: "hybrid"
-  top_k: 10
+  top_k: 20
   similarity_threshold: 0.05
   dense_k: 25
   bm25_k: 25
   alpha: 0.5  # Balanced hybrid retrieval
-  rerank_enabled: false
+  rerank_enabled: true
   rerank_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
-  rerank_top_n: 6
-  rerank_candidate_pool: 30
+  rerank_top_n: 8
+  rerank_candidate_pool: 25
   query_cache_ttl_s: 300
   query_cache_max_items: 10000
 
 context:
-  compact: true
-  max_context_chars: 6000
+  compact: false
+  max_context_chars: 12000
   max_sentences: 8
   max_chunks: 10
 
@@ -68,10 +68,10 @@ llm:
   temperature: 0.7
 
   semantic_cache:
-    enabled: true
+    enabled: false
     embedding_model: "all-MiniLM-L6-v2"
     device: "cpu"
     similarity_threshold: 0.92
     ttl_s: 3600
     max_items: 1000
-    cache_enabled: true
+    cache_enabled: false

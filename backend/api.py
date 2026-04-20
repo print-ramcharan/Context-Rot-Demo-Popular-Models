@@ -22,7 +22,7 @@ from conversation_store import ConversationStore
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv() # Trigger reload
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -116,6 +116,18 @@ retriever = SemanticRetriever(
     alpha=retrieval_cfg.get('alpha', 0.65),
     enable_rerank=retrieval_cfg.get('rerank_enabled', False),
 )
+
+# Optional Reranker (Cross-Encoder)
+if retrieval_cfg.get('rerank_enabled', False):
+    try:
+        reranker = CrossEncoderReranker(
+            model_name=retrieval_cfg.get('rerank_model', "cross-encoder/ms-marco-MiniLM-L-6-v2")
+        )
+        retriever.set_reranker(reranker)
+        logger.info("Reranker initialized and attached to retriever")
+    except Exception as e:
+        logger.error(f"Failed to initialize reranker: {e}")
+
 
 chunker = TextChunker(
     chunk_size=chunk_cfg.get('chunk_size', 400),
