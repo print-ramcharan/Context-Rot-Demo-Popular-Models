@@ -341,6 +341,9 @@ async def clear_store():
 @app.post("/store-conversation")
 async def store_conversation(request: StoreConversationRequest):
     try:
+        if not request.prompt.strip() and not request.response.strip():
+            raise ValueError("Both prompt and response are empty — nothing to store")
+
         result = conv_store.store_conversation(
             platform=request.platform,
             session_id=request.session_id,
@@ -348,13 +351,18 @@ async def store_conversation(request: StoreConversationRequest):
             response=request.response,
             embedding_generator=gen,
         )
+        logger.info(f"Stored conversation: platform={request.platform} session={request.session_id} chunks={result['chunk_count']}")
         return {"status": "success", **result}
     except Exception as e:
+        logger.error(f"store-conversation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/retrieve-context")
 async def retrieve_context(request: RetrieveContextRequest):
     try:
+        if not request.query.strip():
+            raise ValueError("Query cannot be empty")
+
         chunks = conv_store.retrieve_context(
             query=request.query,
             embedding_generator=gen,
@@ -362,9 +370,43 @@ async def retrieve_context(request: RetrieveContextRequest):
             platform_filter=request.platform_filter,
             similarity_threshold=request.similarity_threshold,
         )
-        return {"status": "success", "results": chunks}
+        return {
+            "status": "success",
+            "query": request.query,
+            "results": chunks,
+            "count": len(chunks)
+        }
     except Exception as e:
+        logger.error(f"retrieve-context error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/list-sessions")
+def list_sessions():
+    sessions = conv_store.list_sessions()
+    return {
+        "status": "success",
+        "sessions": sessions,
+        "total": len(sessions)
+    }
+
+@app.delete("/delete-session/{session_id}")
+def delete_session(session_id: str):
+    try:
+        result = conv_store.delete_session(session_id)
+        if not result.get("deleted", False):
+            raise HTTPException(status_code=404, detail=result.get("reason", "Session not found"))
+        
+        logger.info(f"Deleted session: {session_id}")
+        return {"status": "success", **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"delete-session error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/conv-stats")
+def conv_stats():
+    return {"status": "success", **conv_store.get_stats()}
 
 # ── Helper Functions ──────────────────────────────────────────────────────────
 
