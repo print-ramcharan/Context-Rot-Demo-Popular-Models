@@ -83,3 +83,12 @@ logs/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# Context Rot Specifics
+conversations/
+scratch/
+test_conv_store.py
+test_genai.py
+test_genai_inference.py
+test_query.py
+memory_index/

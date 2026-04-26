@@ -14,3 +14,9 @@ demo-documents/*.txt
 
 faiss_index.bin
 conversation_store.pkl
+
+# Runtime Data & Scratch
+conversations/
+scratch/
+data/
+memory_index/
