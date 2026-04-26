@@ -172,6 +172,8 @@ Gemini frequently changes DOM structure, so selectors may need updates if Google
 ```bash
 cd backend
 uvicorn api:app --reload
+or
+venv\Scripts\python -m uvicorn api:app --reload
 ```
 
 ### Load Extension
@@ -225,5 +227,112 @@ Major milestone achieved:
 
 ### Cross-platform persistent AI memory is successfully working.
 
+## Example Test Prompts
+
+Use the following prompts to validate cross-platform memory capture, retrieval, and context injection.
+
+### Test 1 — Technical Memory Recall
+
+**In ChatGPT:**
+```text
+Remember this:
+Our hybrid retrieval system uses BM25, FAISS, alpha=0.65 and RRF constant K=60.
+```
+
+**Then in Gemini/Claude:**
+```text
+What retrieval configuration did I mention earlier?
+```
+
+Expected:
+Memory should be retrieved and referenced in the response.
+
+---
+
+### Test 2 — Cross-Platform Discussion Continuation
+
+**In ChatGPT:**
+```text
+We discussed attention dilution and lost-in-the-middle effects in large language models.
+```
+
+**Then in Gemini:**
+```text
+Continue the earlier discussion about context degradation.
+```
+
+Expected:
+Previous discussion should be injected and used.
+
+---
+
+### Test 3 — Personal Preference Memory
+
+**In ChatGPT:**
+```text
+Remember that I prefer concise technical explanations.
+```
+
+**Then in Claude:**
+```text
+Answer in the style I mentioned earlier.
+```
+
+Expected:
+Response should reflect stored preference.
+
+---
+
+### Test 4 — Secret Phrase Recall
+
+**In ChatGPT:**
+```text
+Remember this phrase:
+The purple elephant uses hybrid retrieval.
+```
+
+**Then in Gemini:**
+```text
+What secret phrase did I mention earlier?
+```
+
+Expected:
+Phrase should be recalled correctly.
+
+---
+
+### Test 5 — Meeting Notes Recall
+
+**In ChatGPT:**
+```text
+Remember these meeting notes:
+- Deadline Friday
+- Use BM25 module
+- Prepare demo slides
+```
+
+**Then in Claude:**
+```text
+Can you recall the meeting notes I shared earlier?
+```
+
+Expected:
+Stored notes should be retrieved.
+
+---
+
+### Test 6 — Relevance Filtering (Negative Test)
+
+Set similarity threshold high and ask:
+
+```text
+What is the capital of Peru?
+```
+
+Expected:
+No unrelated memory should be injected.
+
+
 ```
 ```
+
