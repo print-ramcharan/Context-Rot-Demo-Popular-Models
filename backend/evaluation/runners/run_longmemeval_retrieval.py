@@ -97,13 +97,11 @@ def evaluate_item(
 
     ranked_sessions = []
     for hit in hits:
-        text = hit.get("text", "")
-        marker = "[longmemeval_session_id:"
-        if marker not in text:
-            continue
-        sid = text.split(marker, 1)[1].split("]", 1)[0]
-        if sid not in ranked_sessions:
+        sid = str(hit.get("session_id", ""))
+        if sid and sid not in ranked_sessions:
             ranked_sessions.append(sid)
+        if len(ranked_sessions) >= top_k:
+            break
 
     relevant = set(map(str, item.get("answer_session_ids", [])))
     first_rank = next(
