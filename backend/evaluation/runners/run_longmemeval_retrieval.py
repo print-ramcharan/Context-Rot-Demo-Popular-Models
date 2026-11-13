@@ -11,6 +11,7 @@ import json
 import math
 import statistics
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -60,7 +61,7 @@ def evaluate_item(
     # Per-question isolation is required: one benchmark item must not retrieve
     # memories ingested for another item.
     safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in question_id)
-    store_path = output_root / "stores" / f"{dataset_index:04d}_{safe_id}"
+    store_path = output_root / "stores" / run_id / f"{dataset_index:04d}_{safe_id}"
     store = ConversationStore(str(store_path))
 
     sessions = item.get("haystack_sessions", [])
@@ -153,6 +154,7 @@ def main() -> None:
         cache_enabled=True,
     )
 
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     rows = []
     for index, item in enumerate(items):
         rows.append(evaluate_item(
@@ -168,6 +170,7 @@ def main() -> None:
     summary = {
         "benchmark": "LongMemEval session evidence retrieval",
         "dataset_path": str(args.dataset),
+        "run_id_utc": run_id,
         "n_questions": len(rows),
         "embedding_model": args.embedding_model,
         "top_k": args.top_k,
