@@ -18,12 +18,18 @@ python -m evaluation.report_depth_audit \
   --run-dir evaluation/results/runs/depth_audit_<timestamp>
 ```
 
-The benchmark uses SciFact and NFCorpus test queries, parent-document
-deduplication, a 100-chunk candidate pool, and a 20-parent evaluation depth,
-400-character chunks with 80-character overlap,
-`all-MiniLM-L6-v2`, FAISS cosine search, BM25, reciprocal-rank fusion, and
-`cross-encoder/ms-marco-MiniLM-L-6-v2` for B4. B4 returns 20 reranked
-documents so Recall@20 has the same result depth as the other configurations.
+The benchmark uses SciFact and NFCorpus test queries, 400-character chunks
+with 80-character overlap, `all-MiniLM-L6-v2`, FAISS cosine search, BM25,
+reciprocal-rank fusion, and `cross-encoder/ms-marco-MiniLM-L-6-v2` for B4.
+Dense and hybrid first-stage retrieval use a 100-chunk candidate pool. BM25
+continues down its exact score ranking until it has enough positive-scoring
+unique parent documents for the requested depth. All systems are evaluated
+at up to 20 unique parent documents; shortfalls are reported, never padded.
+
+For B4, the cross-encoder scores candidate chunks (using document title plus
+passage text) before chunks are collapsed to parent documents. The highest
+cross-encoder-scoring passage represents each parent, and the top 20 unique
+parents are returned. This preserves alternate passages during reranking.
 
 ## Provenance
 
