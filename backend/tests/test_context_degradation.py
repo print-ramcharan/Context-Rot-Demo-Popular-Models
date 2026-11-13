@@ -138,3 +138,11 @@ def test_extended_retrieval_metrics_are_unavailable_without_gold():
     metrics = extended_retrieval_metrics(["session"], set())
     assert metrics["hit_at_k"] is None
     assert metrics["ndcg_at_k"] is None
+
+
+
+def test_precision_at_k_uses_requested_cutoff_when_fewer_results_returned():
+    recall, precision, mrr = retrieval_metrics(["gold"], {"gold"}, k=5)
+    assert recall == 1.0
+    assert precision == 0.2
+    assert mrr == 1.0
