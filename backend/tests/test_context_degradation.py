@@ -8,6 +8,7 @@ from evaluation.runners.run_context_degradation import (
     fit_context,
     normalize_answer,
     retrieval_metrics,
+    extended_retrieval_metrics,
     select_history,
     token_f1,
 )
@@ -107,3 +108,33 @@ def test_retrieval_metrics_return_zero_when_nothing_retrieved():
 
 def test_retrieval_metrics_are_unavailable_without_gold_evidence():
     assert retrieval_metrics(["session"], set()) == (None, None, None)
+
+def test_fit_context_keeps_multiple_sessions_when_budget_allows():
+    units = [
+        "[session_id:old] [source_session_id:old]\\n" + ("older detail " * 100),
+        "[session_id:new] [source_session_id:new]\\n" + ("newer detail " * 100),
+    ]
+    context, count, chosen = fit_context(
+        "What happened?", units, 256, CharacterCounter()
+    )
+    assert count <= 256
+    assert "[source_session_id:old]" in context
+    assert "[source_session_id:new]" in context
+    assert len(chosen) == 2
+
+
+def test_extended_retrieval_metrics_include_ranking_and_evidence_completeness():
+    metrics = extended_retrieval_metrics(
+        ["irrelevant", "gold-a", "gold-b"],
+        {"gold-a", "gold-b"},
+    )
+    assert metrics["hit_at_k"] == 1
+    assert metrics["ndcg_at_k"] > 0
+    assert metrics["average_precision_at_k"] > 0
+    assert metrics["evidence_completeness_at_k"] == 1
+
+
+def test_extended_retrieval_metrics_are_unavailable_without_gold():
+    metrics = extended_retrieval_metrics(["session"], set())
+    assert metrics["hit_at_k"] is None
+    assert metrics["ndcg_at_k"] is None
