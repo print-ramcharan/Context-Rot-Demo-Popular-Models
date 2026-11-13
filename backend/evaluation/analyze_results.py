@@ -135,6 +135,7 @@ def main() -> None:
 
     data_root = Path(__file__).resolve().parent / "data"
     official: dict[str, dict] = {}
+    per_query_official: dict[str, dict] = {}
     significance: dict[str, dict] = {}
     query_counts: dict[str, int] = {}
 
@@ -168,6 +169,7 @@ def main() -> None:
             config: values[0] for config, values in evaluated.items()
         }
         per_query = {config: values[1] for config, values in evaluated.items()}
+        per_query_official[dataset] = per_query
         significance[dataset] = {
             f"{baseline}_vs_{candidate}": [
                 _paired(per_query[baseline], per_query[candidate], metric)
@@ -203,6 +205,9 @@ def main() -> None:
     )
     (processed / "paired_significance.json").write_text(
         json.dumps(significance, indent=2), encoding="utf-8"
+    )
+    (processed / "per_query_metrics.json").write_text(
+        json.dumps(per_query_official, indent=2), encoding="utf-8"
     )
     (processed / "analysis_manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
