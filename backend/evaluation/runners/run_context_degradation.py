@@ -419,7 +419,9 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "provider": llm.provider,
                     "model": llm.model,
                     "cache_hit": generated.get("cache_hit", False),
-                    "memory_retrieval_latency_ms": round(retrieval_latency_ms, 3),
+                    "memory_retrieval_latency_ms": (
+                        round(retrieval_latency_ms, 3) if arm == "external_memory" else None
+                    ),
                     "retrieval_method": "BM25+FAISS+RRF+cross-encoder",
                 }
                 rows.append(row)
@@ -513,8 +515,12 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             "token_f1": round(statistics.mean(r["token_f1"] for r in group), 6),
             "mean_prompt_tokens": round(statistics.mean(r["prompt_tokens"] for r in group), 2),
             "mean_generation_latency_ms": round(statistics.mean(latencies), 2),
-            "mean_memory_retrieval_latency_ms": round(
-                statistics.mean(float(r["memory_retrieval_latency_ms"]) for r in group), 2
+            "mean_memory_retrieval_latency_ms": (
+                round(statistics.mean(
+                    float(r["memory_retrieval_latency_ms"]) for r in group
+                    if r["memory_retrieval_latency_ms"] is not None
+                ), 2)
+                if any(r["memory_retrieval_latency_ms"] is not None for r in group) else None
             ),
             "retrieval_recall_at_k": (
                 round(statistics.mean([r["retrieval_recall_at_k"] for r in group
