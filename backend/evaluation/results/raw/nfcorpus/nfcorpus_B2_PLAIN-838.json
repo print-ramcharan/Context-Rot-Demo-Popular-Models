@@ -1,0 +1,37 @@
+{
+  "dataset": "nfcorpus",
+  "query_id": "PLAIN-838",
+  "configuration": "B2",
+  "retrieved_document_ids": [
+    "MED-3501",
+    "MED-3502",
+    "MED-3499",
+    "MED-3495",
+    "MED-3496"
+  ],
+  "retrieval_latency_ms": 1.448,
+  "reranking_latency_ms": 0.0,
+  "scores": [
+    0.699253261089325,
+    0.6405860185623169,
+    0.5902335047721863,
+    0.5367206335067749,
+    0.517848014831543
+  ],
+  "grades": [
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "retrieved_count": 5,
+  "metrics": {
+    "recall@5": 0.5555555555555556,
+    "recall@10": 0.5555555555555556,
+    "recall@20": 0.5555555555555556,
+    "mrr@10": 1.0,
+    "ndcg@10": 1.0,
+    "precision@10": 0.5
+  }
+}

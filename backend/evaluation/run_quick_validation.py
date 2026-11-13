@@ -32,6 +32,7 @@ from evaluation.metrics.retrieval_metrics import compute_query_metrics  # noqa: 
 from evaluation.runners.run_retrieval import (  # noqa: E402
     _dense_chunks,
     _bm25_chunks,
+    _make_retriever,
     _measure_rerank,
     _run_config,
     aggregate_records,
@@ -81,16 +82,19 @@ def main() -> None:
 
     all_records = []
     for qid, query_text in SAMPLE_QUERIES.items():
-        for config_id in ["B1", "B2", "B3", "B4"]:
-            chunks_out = _run_config(query_text, {"mode": config_id.lower(), "rerank": config_id == "B4"},
+        for config_id, config in CONFIGS.items():
+            chunks_out = _run_config(query_text, config,
                                      chunks, store, gen, bm25_index, CONFIG)
             ids, scores, grades = _map_to_parent_records(chunks_out, SAMPLE_QRELS, qid)
             total_relevant = sum(1 for _ in SAMPLE_QRELS.get(qid, {}).values())
-            metrics = compute_query_metrics(scores, total_relevant)
+            metrics = compute_query_metrics(grades, total_relevant)
 
             rerank_ms = 0.0
             if config_id == "B4":
-                rerank_ms = _measure_rerank(query_text, chunks_out, store, gen, CONFIG)
+                reranker = _make_retriever(
+                    store, gen, CONFIG, enable_rerank=True
+                ).reranker
+                rerank_ms = _measure_rerank(query_text, chunks_out, reranker, CONFIG)
 
             record = {
                 "dataset": "quick_validation",
@@ -123,4 +127,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

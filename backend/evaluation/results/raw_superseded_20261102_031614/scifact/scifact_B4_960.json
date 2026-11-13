@@ -1,0 +1,33 @@
+{
+  "dataset": "scifact",
+  "query_id": "960",
+  "configuration": "B4",
+  "retrieved_document_ids": [
+    "8780599",
+    "35495268",
+    "12709184",
+    "75636923"
+  ],
+  "retrieval_latency_ms": 220.956,
+  "reranking_latency_ms": 93.955,
+  "scores": [
+    7.538599014282227,
+    -2.256089210510254,
+    -3.2425339221954346,
+    -3.758074998855591
+  ],
+  "grades": [
+    1,
+    0,
+    0,
+    0
+  ],
+  "metrics": {
+    "recall@5": 1.0,
+    "recall@10": 1.0,
+    "recall@20": 1.0,
+    "mrr@10": 1.0,
+    "ndcg@10": 1.0,
+    "precision@10": 0.1
+  }
+}

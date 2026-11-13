@@ -5,6 +5,8 @@ retrieval results can be mapped back to the original BEIR document IDs used
 by the relevance judgments (``qrels``).
 """
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from typing import Dict, Tuple
@@ -19,8 +21,12 @@ logger = logging.getLogger(__name__)
 def load_beir_dataset(data_path: str | Path, dataset_name: str):
     """Load ``corpus``, ``queries``, and ``qrels`` from a BEIR dataset directory."""
     data_path = Path(data_path)
+    # BEIR extracts into a nested directory: {data_path}/{dataset_name}/
+    nested = data_path / dataset_name
+    if nested.exists():
+        data_path = nested
     loader = GenericDataLoader(str(data_path))
-    corpus, queries, qrels = loader.load_dataset(dataset_name)
+    corpus, queries, qrels = loader.load(split="test")
     # Normalise qrels: {qid: {doc_id: grade}}
     qrels = {str(qid): {str(doc_id): int(grade) for doc_id, grade in qrels[qid].items()} for qid in qrels}
     return corpus, queries, qrels

@@ -18,15 +18,17 @@ embedding:
 # Shared retrieval hyperparameters (match backend/config.yaml).
 retrieval:
   mode: "hybrid"
-  top_k: 20
-  dense_k: 25
-  bm25_k: 25
+  candidate_pool_size: 100
+  evaluation_depth: 20
+  top_k: 100
+  dense_k: 100
+  bm25_k: 100
   alpha: 0.5
   similarity_threshold: 0.05
   rerank_enabled: true
   rerank_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
-  rerank_top_n: 8
-  rerank_candidate_pool: 25
+  rerank_candidate_pool: 100
+  rerank_top_n: 20
   query_cache_ttl_s: 300
   query_cache_max_items: 10000
 

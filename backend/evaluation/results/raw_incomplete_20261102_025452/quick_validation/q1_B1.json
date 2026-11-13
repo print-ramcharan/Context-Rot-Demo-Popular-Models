@@ -1,0 +1,30 @@
+{
+  "dataset": "quick_validation",
+  "query_id": "q1",
+  "configuration": "B1",
+  "retrieved_document_ids": [
+    "doc-2",
+    "doc-1",
+    "doc-3"
+  ],
+  "scores": [
+    2.289468813396072,
+    0.0,
+    0.0
+  ],
+  "grades": [
+    1,
+    1,
+    0
+  ],
+  "metrics": {
+    "recall@5": 0.6666666666666666,
+    "recall@10": 0.6666666666666666,
+    "recall@20": 0.6666666666666666,
+    "mrr@10": 1.0,
+    "ndcg@10": 1.0,
+    "precision@10": 0.2
+  },
+  "retrieval_latency_ms": 0.1,
+  "reranking_latency_ms": 0.0
+}

@@ -1,0 +1,24 @@
+{
+  "dataset": "nfcorpus",
+  "query_id": "PLAIN-924",
+  "configuration": "B4",
+  "retrieved_document_ids": [
+    "MED-3044"
+  ],
+  "retrieval_latency_ms": 152.087,
+  "reranking_latency_ms": 63.853,
+  "scores": [
+    3.301990509033203
+  ],
+  "grades": [
+    1
+  ],
+  "metrics": {
+    "recall@5": 0.03125,
+    "recall@10": 0.03125,
+    "recall@20": 0.03125,
+    "mrr@10": 1.0,
+    "ndcg@10": 1.0,
+    "precision@10": 0.1
+  }
+}

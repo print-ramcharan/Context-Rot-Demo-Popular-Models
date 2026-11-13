@@ -1,0 +1,30 @@
+{
+  "dataset": "nfcorpus",
+  "query_id": "PLAIN-3402",
+  "configuration": "B4",
+  "retrieved_document_ids": [
+    "MED-2951",
+    "MED-4689",
+    "MED-4413"
+  ],
+  "retrieval_latency_ms": 223.641,
+  "reranking_latency_ms": 76.747,
+  "scores": [
+    2.6812195777893066,
+    2.6812195777893066,
+    0.3787463307380676
+  ],
+  "grades": [
+    0,
+    0,
+    0
+  ],
+  "metrics": {
+    "recall@5": 0.0,
+    "recall@10": 0.0,
+    "recall@20": 0.0,
+    "mrr@10": 0.0,
+    "ndcg@10": 0.0,
+    "precision@10": 0.0
+  }
+}

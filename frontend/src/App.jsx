@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
 import Header from './components/Layout/Header';
 import FileDropzone from './components/Upload/FileDropzone';
 import QueryBar from './components/Chat/QueryBar';
 import ComparisonView from './components/Comparison/ComparisonView';
+import { API_BASE } from './config';
 import {
   ArrowRight,
   ArrowUpRight,
@@ -23,8 +23,6 @@ import {
   Mail,
   Heart
 } from 'lucide-react';
-
-const API_BASE = 'http://127.0.0.1:8000';
 
 const technologies = [
   { name: 'Gemini 1.5 Pro', desc: 'State-of-the-art multimodal reasoning', icon: Bot },

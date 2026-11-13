@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import axios from 'axios';
 import { UploadCloud, CheckCircle2, Loader2, AlertCircle, FileText, RefreshCw } from 'lucide-react';
+import { API_BASE } from '../../config';
 
 export default function FileDropzone({ onUpload }) {
   const [status, setStatus] = useState('idle');
@@ -23,7 +24,7 @@ export default function FileDropzone({ onUpload }) {
         setProgress(prev => Math.min(prev + 10, 90));
       }, 200);
 
-      const response = await axios.post('http://127.0.0.1:8000/upload?clear_existing=true', formData, {
+      const response = await axios.post(`${API_BASE}/upload?clear_existing=true`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 

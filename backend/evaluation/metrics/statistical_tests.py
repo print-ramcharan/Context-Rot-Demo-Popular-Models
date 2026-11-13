@@ -6,6 +6,7 @@ signed-rank test for per-query retrieval metrics.
 
 import numpy as np
 from scipy import stats
+from typing import Sequence, Tuple
 
 RANDOM_SEED = 42
 

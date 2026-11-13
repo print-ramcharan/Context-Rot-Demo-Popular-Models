@@ -1,5 +1,22 @@
 # Demo Documents
 
+This folder contains a small, ready-to-upload corpus for the live demo. Start with
+`alice-in-wonderland.txt` for a quick standard-vs-RAG comparison, then add
+`rfc-8446.txt` to demonstrate retrieval across unrelated documents.
+
+The companion presentation script is in [`PRESENTATION-QUESTIONS.md`](PRESENTATION-QUESTIONS.md).
+
+## Suggested Upload Order
+
+1. Upload `alice-in-wonderland.txt` with **Clear existing data** enabled.
+2. Ask the Alice questions in the presentation script.
+3. Upload `rfc-8446.txt` without clearing existing data.
+4. Ask one TLS question and one Alice question to show source selection.
+
+Both files are intentionally modest in size so they can be used reliably during a
+live presentation. The sources are public: Project Gutenberg and the IETF RFC
+Editor.
+
 These documents are pre-selected to reliably demonstrate Context Rot.
 
 ## war-and-peace.txt
