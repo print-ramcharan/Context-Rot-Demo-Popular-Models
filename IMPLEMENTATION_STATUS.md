@@ -15,10 +15,12 @@ completed command. Unrun experiments are not represented as results.
   - Chunks without parent IDs: 0 for both datasets.
 - A complete B1-B4 retrieval run produced 1,200 SciFact and 1,292 NFCorpus
   per-query records.
-- Official BEIR aggregate metrics and paired tests were generated from that
-  historical run. These are preserved under
-  `backend/evaluation/results/processed/` and are explicitly superseded for
-  the corrected B4 depth comparison.
+- The November 13 run `depth_audit_20261113_170539` completed, but inspection
+  after that run found that its B4 path still collapsed chunks to parent
+  documents before reranking. Its B4 scores therefore do NOT evaluate the
+  corrected chunk-level reranking implementation added afterward. Preserve
+  those outputs as historical results; rerun B1-B4 before making claims about
+  the corrected reranker.
 
 ## Implemented in this revision
 
@@ -113,7 +115,9 @@ LongMemEval LLM-judge score.
 ## Not completed
 
 The context-degradation runner is implemented but has not been executed; no
-answer-quality or context-degradation results exist yet. The official
+answer-quality or context-degradation results exist yet. The corrected
+chunk-level B4 runner also requires a fresh BEIR run; the November 13 17:05
+run predates that final fix. The official
 LongMemEval LLM-judge evaluation, Longformer/long-context model comparison,
 advanced RAG framework comparisons, RAM profiling, production-scale
 concurrency, and end-to-end security controls remain unimplemented or
