@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import argparse
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 import numpy as np
 from beir.retrieval.evaluation import EvaluateRetrieval
@@ -38,55 +38,63 @@ def _result_map(records: List[dict]) -> dict[str, dict[str, float]]:
     return results
 
 
-def _official(qrels: Dict[str, Dict[str, int]], records: List[dict]) -> dict:
+def _evaluate_system(
+    qrels: Dict[str, Dict[str, int]],
+    records: List[dict],
+    k_values: Sequence[int] = (5, 10, 20),
+) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
+    """Compute official BEIR aggregate metrics and aligned per-query metrics using pytrec_eval."""
+    import pytrec_eval
+
     results = _result_map(records)
-    ndcg, _map, recall, precision = EvaluateRetrieval.evaluate(
-        qrels, results, [5, 10, 20]
-    )
-    return {
-        "NDCG@10": ndcg["NDCG@10"],
-        "Recall@10": recall["Recall@10"],
-        "P@10": precision["P@10"],
-    }
+    map_string = "map_cut." + ",".join([str(k) for k in k_values])
+    ndcg_string = "ndcg_cut." + ",".join([str(k) for k in k_values])
+    recall_string = "recall." + ",".join([str(k) for k in k_values])
+    precision_string = "P." + ",".join([str(k) for k in k_values])
 
-
-def _official_query_metrics(
-    qrels: Dict[str, Dict[str, int]], record: dict
-) -> dict[str, float]:
-    ranked_ids = record["retrieved_document_ids"]
-    grades = [qrels.get(record["query_id"], {}).get(doc_id, 0) for doc_id in ranked_ids]
-    relevant = sum(grade > 0 for grade in qrels.get(record["query_id"], {}).values())
-    cutoff = 10
-    top = grades[:cutoff]
-    dcg = sum((2**grade - 1) / np.log2(rank + 2) for rank, grade in enumerate(top))
-    ideal = sorted(qrels.get(record["query_id"], {}).values(), reverse=True)[:cutoff]
-    idcg = sum((2**grade - 1) / np.log2(rank + 2) for rank, grade in enumerate(ideal))
-    first_relevant = next(
-        (rank + 1 for rank, grade in enumerate(top) if grade > 0), None
+    evaluator = pytrec_eval.RelevanceEvaluator(
+        qrels, {map_string, ndcg_string, recall_string, precision_string}
     )
-    return {
-        "recall@10": sum(grade > 0 for grade in top) / relevant if relevant else 0.0,
-        "ndcg@10": dcg / idcg if idcg else 0.0,
-        "precision@10": sum(grade > 0 for grade in top) / cutoff,
-        "mrr@10": 1.0 / first_relevant if first_relevant else 0.0,
+    scores = evaluator.evaluate(results)
+
+    # Compute per-query MRR@10 according to official BEIR logic
+    # (reciprocal rank of first relevant doc within top-k)
+    per_query_metrics = {}
+    for qid, doc_scores in results.items():
+        top_hits = sorted(doc_scores.items(), key=lambda item: item[1], reverse=True)[:10]
+        q_rels = set(doc for doc, g in qrels.get(qid, {}).items() if g > 0)
+        rr = 0.0
+        for rank, (doc_id, _) in enumerate(top_hits):
+            if doc_id in q_rels:
+                rr = 1.0 / (rank + 1)
+                break
+
+        q_score = scores.get(qid, {})
+        per_query_metrics[qid] = {
+            "ndcg@10": float(q_score.get("ndcg_cut_10", 0.0)),
+            "recall@10": float(q_score.get("recall_10", 0.0)),
+            "precision@10": float(q_score.get("P_10", 0.0)),
+            "mrr@10": float(rr),
+        }
+
+    n = len(per_query_metrics) if per_query_metrics else 1
+    aggregate = {
+        "NDCG@10": round(sum(m["ndcg@10"] for m in per_query_metrics.values()) / n, 5),
+        "Recall@10": round(sum(m["recall@10"] for m in per_query_metrics.values()) / n, 5),
+        "P@10": round(sum(m["precision@10"] for m in per_query_metrics.values()) / n, 5),
+        "MRR@10": round(sum(m["mrr@10"] for m in per_query_metrics.values()) / n, 5),
     }
+    return aggregate, per_query_metrics
 
 
 def _paired(
-    qrels: Dict[str, Dict[str, int]],
-    records_a: List[dict],
-    records_b: List[dict],
+    per_query_a: Dict[str, Dict[str, float]],
+    per_query_b: Dict[str, Dict[str, float]],
     metric: str,
 ) -> dict:
-    by_id_a = {
-        r["query_id"]: _official_query_metrics(qrels, r)[metric] for r in records_a
-    }
-    by_id_b = {
-        r["query_id"]: _official_query_metrics(qrels, r)[metric] for r in records_b
-    }
-    ids = sorted(set(by_id_a) & set(by_id_b))
-    before = [by_id_a[qid] for qid in ids]
-    after = [by_id_b[qid] for qid in ids]
+    ids = sorted(set(per_query_a.keys()) & set(per_query_b.keys()))
+    before = [per_query_a[qid][metric] for qid in ids]
+    after = [per_query_b[qid][metric] for qid in ids]
     differences = [b - a for a, b in zip(before, after)]
     ci = paired_bootstrap_ci(differences)
     test = wilcoxon_signed_rank_test(before, after)
@@ -133,13 +141,17 @@ def main() -> None:
         ):
             counts = {config: len(ids) for config, ids in query_ids.items()}
             raise RuntimeError(f"Incomplete or misaligned results for {dataset}: {counts}")
-        official[dataset] = {
-            config: _official(qrels, records)
+
+        dataset_eval = {
+            config: _evaluate_system(qrels, records)
             for config, records in records_by_config.items()
         }
+        official[dataset] = {config: res[0] for config, res in dataset_eval.items()}
+        per_query = {config: res[1] for config, res in dataset_eval.items()}
+
         significance[dataset] = {
             f"{baseline}_vs_{candidate}": [
-                _paired(qrels, records_by_config[baseline], records_by_config[candidate], metric)
+                _paired(per_query[baseline], per_query[candidate], metric)
                 for metric in ("recall@10", "ndcg@10", "precision@10", "mrr@10")
             ]
             for baseline, candidate in (("B1", "B3"), ("B3", "B4"))

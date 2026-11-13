@@ -207,7 +207,8 @@ class LLMInference:
             
             # Load environment variables from .env file
             load_dotenv()
-           
+            from pathlib import Path
+            load_dotenv(Path(__file__).resolve().parents[1] / ".env")
             
             api_key = self.config.get('api_key') or os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
             if not api_key:

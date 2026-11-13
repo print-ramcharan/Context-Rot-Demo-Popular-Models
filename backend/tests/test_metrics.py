@@ -54,10 +54,38 @@ class TestRetrievalMetrics(unittest.TestCase):
     def test_ndcg(self):
         self.assertAlmostEqual(ndcg_at_k(self.scores, 10), 0.9197, places=4)
 
+    def test_ndcg_with_ideal_scores(self):
+        # Retrieved [1, 0] when total 3 relevant documents exist
+        # DCG@10 = 1 / log2(2) = 1.0
+        # IDCG@10 = 1/log2(2) + 1/log2(3) + 1/log2(4) = 1 + 0.63092975 + 0.5 = 2.13092975
+        # NDCG@10 = 1.0 / 2.13092975 = 0.469278...
+        scores = [1, 0]
+        ideal_scores = [1, 1, 1]
+        self.assertAlmostEqual(ndcg_at_k(scores, 10, ideal_scores=ideal_scores), 0.4693, places=4)
+
+    def test_ndcg_graded_matches_trec_eval(self):
+        # Graded relevance: query has docs with grades 3, 2, 1
+        # System retrieved in reverse order: [1, 2, 3]
+        # DCG@10 = 1/log2(2) + 2/log2(3) + 3/log2(4) = 1.0 + 1.2618595 + 1.5 = 3.7618595
+        # IDCG@10 = 3/log2(2) + 2/log2(3) + 1/log2(4) = 3.0 + 1.2618595 + 0.5 = 4.7618595
+        # NDCG@10 = 3.7618595 / 4.7618595 = 0.789998...
+        retrieved = [1, 2, 3]
+        qrels = [3, 2, 1]
+        self.assertAlmostEqual(ndcg_at_k(retrieved, 10, ideal_scores=qrels), 0.7900, places=4)
+
     def test_compute_query_metrics(self):
         metrics = compute_query_metrics(self.scores, total_relevant=2)
         for key, expected in _EXPECTED.items():
             self.assertAlmostEqual(metrics[key], expected, places=4)
+
+    def test_compute_query_metrics_graded(self):
+        retrieved = [1, 2, 3]
+        qrel_grades = [3, 2, 1]
+        metrics = compute_query_metrics(retrieved, total_relevant=3, qrel_grades=qrel_grades)
+        self.assertAlmostEqual(metrics["ndcg@10"], 0.7900, places=4)
+        self.assertAlmostEqual(metrics["recall@10"], 1.0, places=4)
+        self.assertAlmostEqual(metrics["precision@10"], 0.3, places=4)
+        self.assertAlmostEqual(metrics["mrr@10"], 1.0, places=4)
 
 
 if __name__ == "__main__":

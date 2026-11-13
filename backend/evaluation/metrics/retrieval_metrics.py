@@ -31,25 +31,21 @@ def dcg_at_k(rel_scores: Sequence[float], k: int) -> float:
 def ndcg_at_k(
     rel_scores: Sequence[float],
     k: int,
-    ideal_rel_scores: Sequence[float] | None = None,
+    ideal_scores: Sequence[float] | None = None,
 ) -> float:
-    """Compute graded NDCG using the complete qrels relevance grades.
+    """Normalized Discounted Cumulative Gain at rank k with linear gain.
 
-    Evaluation callers should pass all judged relevance grades for the query.
+    Matches the standard TREC / BEIR evaluation formula:
+    gain is linear (score_i), and discount is log2(rank + 1).
+    IDCG is computed from the top-k ideal relevance grades (from qrels).
     """
     scores = _as_float_array(rel_scores)[:k]
-
-    def _dcg(values: Sequence[float]) -> float:
-        values = _as_float_array(values)[:k]
-        if values.size == 0:
-            return 0.0
-        gains = np.power(2.0, values) - 1.0
-        discounts = np.log2(np.arange(2, values.size + 2, dtype=float))
-        return float(np.sum(gains / discounts))
-
-    dcg = _dcg(scores)
-    ideal_source = ideal_rel_scores if ideal_rel_scores is not None else rel_scores
-    ideal = _dcg(sorted(ideal_source, reverse=True))
+    dcg = dcg_at_k(scores, k)
+    if ideal_scores is not None:
+        ideal_arr = _as_float_array(ideal_scores)
+        ideal = dcg_at_k(sorted(ideal_arr.tolist(), reverse=True), k)
+    else:
+        ideal = dcg_at_k(sorted(scores.tolist(), reverse=True), k)
     if ideal <= 0.0:
         return 0.0
     return float(dcg / ideal)
@@ -85,15 +81,28 @@ def reciprocal_rank(rel_scores: Sequence[float], k: int | None = None) -> float:
 def compute_query_metrics(
     retrieved_grades: Sequence[float],
     total_relevant: int,
-    all_relevant_grades: Sequence[float] | None = None,
+    qrel_grades: Sequence[float] | None = None,
 ) -> Dict[str, float]:
-    """Compute document-level metrics from ranked grades and complete qrels."""
+    """Compute document-level metrics from ranked relevance grades.
+
+    If `qrel_grades` is provided, NDCG@10 uses the true ideal ranking of all
+    relevant documents in the qrels for that query. If omitted, binary relevance
+    with `total_relevant` items of grade 1 is assumed.
+    """
     rel = _as_float_array(retrieved_grades)
+    if qrel_grades is not None:
+        ideal_scores = qrel_grades
+    elif total_relevant > 0:
+        ideal_scores = [1.0] * total_relevant
+    else:
+        ideal_scores = None
+
     return {
         "recall@5": recall_at_k(rel, 5, total_relevant),
         "recall@10": recall_at_k(rel, 10, total_relevant),
         "recall@20": recall_at_k(rel, DEFAULT_CUTOFF_K, total_relevant),
         "mrr@10": reciprocal_rank(rel, DEFAULT_MRR_K),
-        "ndcg@10": ndcg_at_k(rel, DEFAULT_NDCG_K, all_relevant_grades),
+        "ndcg@10": ndcg_at_k(rel, DEFAULT_NDCG_K, ideal_scores=ideal_scores),
         "precision@10": precision_at_k(rel, 10),
     }
+
