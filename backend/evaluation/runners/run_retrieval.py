@@ -337,7 +337,7 @@ def _run_config_with_depth(
             metadata = item.get("metadata", {}) or {}
             title = metadata.get("title") or metadata.get("source")
             item["rerank_text"] = (
-                f"{title}\\n{item.get('text', '')}" if title else item.get("text", "")
+                f"{title}\n{item.get('text', '')}" if title else item.get("text", "")
             )
             rerank_inputs.append(item)
 
@@ -375,7 +375,7 @@ def _measure_rerank(
         metadata = item.get("metadata", {}) or {}
         title = metadata.get("title") or metadata.get("source")
         item["rerank_text"] = (
-            f"{title}\\n{item.get('text', '')}" if title else item.get("text", "")
+            f"{title}\n{item.get('text', '')}" if title else item.get("text", "")
         )
         pool.append(item)
     start = time.perf_counter()
