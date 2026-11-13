@@ -503,6 +503,12 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 context, prompt_tokens, selected_units = fit_context(
                     question, units, prompt_budget, counter, question_date
                 )
+                question_only_prompt_tokens = counter.count(
+                    build_prompt(question, "", question_date)
+                )
+                context_prompt_token_delta = max(
+                    0, prompt_tokens - question_only_prompt_tokens
+                )
                 included_session_ids = []
                 for unit in selected_units:
                     match = re.search(r"\[source_session_id:([^\]]+)\]", unit)
@@ -558,6 +564,9 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "exact_match": exact_match(prediction, answer),
                     "token_f1": token_f1(prediction, answer),
                     "prompt_tokens": prompt_tokens,
+                    "question_only_prompt_tokens": question_only_prompt_tokens,
+                    "context_prompt_token_delta": context_prompt_token_delta,
+                    "context_prompt_budget_utilization": context_prompt_token_delta / prompt_budget,
                     "prompt_token_budget": prompt_budget,
                     "context_characters": len(context),
                     "context_text": context,
@@ -581,6 +590,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                         len(included_session_ids) / max(1, len(recent_units))
                         if arm == "recent_history" else
                         len(included_session_ids) / max(1, len(all_history_units))
+                        if arm == "long_context" else None
+                    ),
+                    "long_context_full_history_fit": (
+                        len(included_session_ids) == len(all_history_units)
                         if arm == "long_context" else None
                     ),
                     "retrieved_session_ids": retrieved_session_ids,
