@@ -351,7 +351,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     platform="longmemeval",
                     session_id=memory_id,
                     prompt=f"LongMemEval session {sid}; date {session_date}",
-                    response=f"[session_date:{session_date}]\\n{text}",
+                    response=f"[session_date:{session_date}]\n{text}",
                     embedding_generator=embedder,
                     chunk_size=args.chunk_size,
                     overlap=args.overlap,
@@ -394,7 +394,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             session_date = date_by_memory_id[memory_id]
             memory_units.append(
                 f"[session_id:{memory_id}] [source_session_id:{source_sid}] "
-                f"[session_date:{session_date}]\\n{hit.get('text', '')}"
+                f"[session_date:{session_date}]\n{hit.get('text', '')}"
             )
             if len(memory_units) >= args.retrieval_k:
                 break
@@ -435,7 +435,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 )
                 included_session_ids = []
                 for unit in selected_units:
-                    match = re.search(r"\\[source_session_id:([^\\]]+)\\]", unit)
+                    match = re.search(r"\[source_session_id:([^\]]+)\]", unit)
                     if match and match.group(1) not in included_session_ids:
                         included_session_ids.append(match.group(1))
                 if arm == "recent_history" and selected and not context.strip():
