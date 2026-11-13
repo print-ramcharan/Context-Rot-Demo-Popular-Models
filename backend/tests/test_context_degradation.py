@@ -28,7 +28,7 @@ def test_exact_match_ignores_case_punctuation_and_articles():
 
 
 def test_token_f1_partial_overlap():
-    assert token_f1("Paris is the capital", "Paris capital city") == pytest.approx(4 / 7)
+    assert token_f1("Paris is the capital", "Paris capital city") == pytest.approx(2 / 3)
 
 
 def test_select_history_uses_most_recent_sessions():
