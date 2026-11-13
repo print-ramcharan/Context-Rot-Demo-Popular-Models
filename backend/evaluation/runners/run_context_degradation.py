@@ -25,6 +25,9 @@ import yaml
 from conversation_store import ConversationStore
 from src.embedding import EmbeddingGenerator
 from src.inference import LLMInference
+from src.retrieval import SemanticRetriever
+from src.vector_store import VectorStore
+from src.reranker import CrossEncoderReranker
 from evaluation.metrics.statistical_tests import (
     paired_bootstrap_ci,
     wilcoxon_signed_rank_test,
@@ -71,6 +74,39 @@ def session_to_text(session: list[dict[str, Any]]) -> str:
         if text:
             lines.append(f"[{role}] {text}")
     return "\n".join(lines)
+
+
+def build_hybrid_memory_retriever(
+    store: ConversationStore,
+    embedder: EmbeddingGenerator,
+    reranker: CrossEncoderReranker,
+    candidate_pool_size: int,
+    retrieval_k: int,
+) -> SemanticRetriever:
+    """Reuse the stored FAISS memory index with BM25 + dense RRF + cross-encoder."""
+    vector_store = VectorStore(
+        dimension=embedder.get_embedding_dimension(),
+        index_type="cosine",
+    )
+    # ConversationStore already built and normalized this FAISS index.
+    vector_store.index = store._index
+    vector_store.chunks = store._chunks
+    vector_store.metadata = store._metadata
+    retriever = SemanticRetriever(
+        vector_store=vector_store,
+        embedding_generator=embedder,
+        top_k=retrieval_k,
+        similarity_threshold=0.0,
+        mode="hybrid",
+        dense_k=candidate_pool_size,
+        bm25_k=candidate_pool_size,
+        alpha=0.5,
+        enable_rerank=True,
+        rerank_candidate_pool=candidate_pool_size,
+        rerank_top_n=retrieval_k,
+    )
+    retriever.set_reranker(reranker)
+    return retriever
 
 
 def build_prompt(question: str, context: str, question_date: str = "") -> str:
@@ -206,6 +242,12 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     rows: list[dict[str, Any]] = []
     history_sizes = args.history_sizes.split(",")
+    reranker = CrossEncoderReranker(model_name=args.rerank_model)
+    if reranker.model is None:
+        raise RuntimeError(
+            f"Could not load required cross-encoder {args.rerank_model!r}; "
+            "refusing to label dense-only retrieval as hybrid+rereanked memory."
+        )
 
     for item_index, item in enumerate(items):
         qid = str(item["question_id"])
@@ -240,13 +282,22 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 for sid, session in reversed(selected)
                 if session_to_text(session)
             ]
-            hits = store.retrieve_context(
-                query=question,
-                embedding_generator=embedder,
-                top_k=args.retrieval_k,
-                platform_filter=None,
-                similarity_threshold=0.0,
+            memory_retriever = build_hybrid_memory_retriever(
+                store=store,
+                embedder=embedder,
+                reranker=reranker,
+                candidate_pool_size=args.candidate_pool_size,
+                retrieval_k=args.retrieval_k,
             )
+            retrieval_started = time.perf_counter()
+            hits = memory_retriever.retrieve(
+                query=question,
+                k=args.retrieval_k,
+                threshold=0.0,
+                mode="hybrid",
+                use_cache=False,
+            )
+            retrieval_latency_ms = (time.perf_counter() - retrieval_started) * 1000.0
             memory_units = []
             seen_sessions = set()
             for hit in hits:
@@ -298,6 +349,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "provider": llm.provider,
                     "model": llm.model,
                     "cache_hit": generated.get("cache_hit", False),
+                    "memory_retrieval_latency_ms": round(retrieval_latency_ms, 3),
+                    "retrieval_method": "BM25+FAISS+RRF+cross-encoder",
                 }
                 rows.append(row)
 
@@ -355,6 +408,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "n_questions": len(items),
         "history_sizes": history_sizes,
         "max_prompt_tokens": args.max_prompt_tokens,
+        "retrieval_method": "BM25 + FAISS dense retrieval + RRF + cross-encoder reranking",
+        "retrieval_candidate_pool_size": args.candidate_pool_size,
+        "retrieval_top_k": args.retrieval_k,
+        "reranker_model": args.rerank_model,
         "provider": llm.provider,
         "model": llm.model,
         "temperature": args.temperature,
@@ -386,7 +443,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         fields = [
             "question_id", "question_type", "history_size", "arm", "exact_match",
             "token_f1", "prompt_tokens", "context_characters", "generation_latency_ms",
-            "provider", "model",
+            "provider", "model", "memory_retrieval_latency_ms", "retrieval_method",
         ]
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
@@ -428,14 +485,16 @@ def main() -> None:
     parser.add_argument("--history-sizes", default="5,10,20,all")
     parser.add_argument("--max-prompt-tokens", type=int, default=4096)
     parser.add_argument("--retrieval-k", type=int, default=30)
+    parser.add_argument("--candidate-pool-size", type=int, default=100)
+    parser.add_argument("--rerank-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     parser.add_argument("--chunk-size", type=int, default=220)
     parser.add_argument("--overlap", type=int, default=30)
     parser.add_argument("--max-output-tokens", type=int, default=128)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--limit", type=int, default=5, help="Smoke test limit; use 0 for all questions")
     args = parser.parse_args()
-    if args.max_prompt_tokens < 128 or args.retrieval_k < 1:
-        parser.error("max-prompt-tokens must be >=128 and retrieval-k >=1")
+    if args.max_prompt_tokens < 128 or args.retrieval_k < 1 or args.candidate_pool_size < args.retrieval_k:
+        parser.error("Require max-prompt-tokens >=128 and candidate-pool-size >= retrieval-k >=1")
     if args.overlap < 0 or args.overlap >= args.chunk_size:
         parser.error("Require 0 <= overlap < chunk-size")
     if not args.history_sizes or any(
