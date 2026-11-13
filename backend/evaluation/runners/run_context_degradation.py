@@ -398,6 +398,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             args.output_dir / "stores" / run_id /
             f"{item_index:04d}_{re.sub(r'[^A-Za-z0-9_-]', '_', qid)}_all"
         )
+        index_started = time.perf_counter()
         store = ConversationStore(str(store_path))
         indexed_session_ids = []
         for sid, session_date, session, session_index in all_history:
@@ -414,6 +415,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     overlap=args.overlap,
                 )
                 indexed_session_ids.append(sid)
+        memory_indexing_latency_ms = (time.perf_counter() - index_started) * 1000.0
+        memory_index_size_bytes = sum(
+            path.stat().st_size for path in store_path.rglob("*") if path.is_file()
+        )
 
         memory_retriever = build_hybrid_memory_retriever(
             store=store,
@@ -535,6 +540,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "history_sessions_available": len(selected),
                     "full_history_sessions_available": len(all_history),
                     "full_history_sessions_indexed": len(indexed_session_ids),
+                    "full_history_session_ids": [sid for sid, _, _, _ in all_history],
+                    "indexed_session_ids": list(indexed_session_ids),
                     "arm": arm,
                     "prediction": prediction,
                     "gold_answer": answer,
@@ -547,7 +554,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "context_session_ids": included_session_ids,
                     "context_session_count": len(included_session_ids),
                     "context_session_coverage": (
-                        len(included_session_ids) / max(1, len(selected))
+                        len(included_session_ids) / max(1, len(recent_units))
                         if arm == "recent_history" else
                         len(included_session_ids) / max(1, len(all_history_units))
                         if arm == "long_context" else None
@@ -573,6 +580,12 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "provider": llm.provider,
                     "model": llm.model,
                     "cache_hit": generated.get("cache_hit", False),
+                    "memory_indexing_latency_ms": (
+                        round(memory_indexing_latency_ms, 3) if arm == "external_memory" else None
+                    ),
+                    "memory_index_size_bytes": (
+                        memory_index_size_bytes if arm == "external_memory" else None
+                    ),
                     "memory_retrieval_latency_ms": (
                         round(retrieval_latency_ms, 3) if arm == "external_memory" else None
                     ),
