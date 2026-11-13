@@ -369,7 +369,15 @@ def _measure_rerank(
     reranker: Any,
     retrieval_cfg: Dict[str, Any],
 ) -> float:
-    pool = retrieved_chunks[: int(retrieval_cfg["rerank_candidate_pool"])]
+    pool = []
+    for candidate in retrieved_chunks[: int(retrieval_cfg["rerank_candidate_pool"])]:
+        item = dict(candidate)
+        metadata = item.get("metadata", {}) or {}
+        title = metadata.get("title") or metadata.get("source")
+        item["rerank_text"] = (
+            f"{title}\\n{item.get('text', '')}" if title else item.get("text", "")
+        )
+        pool.append(item)
     start = time.perf_counter()
     reranker.rerank(query, pool, top_n=len(pool))
     return (time.perf_counter() - start) * 1000.0
