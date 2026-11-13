@@ -439,6 +439,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         memory_units = []
         seen_memory_ids = set()
         retrieved_session_ids_ordered = []
+        retrieved_session_score_by_source_id: dict[str, float | None] = {}
         seen_source_ids = set()
         for hit in hits:
             metadata = hit.get("metadata", {})
@@ -453,6 +454,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 continue
             seen_source_ids.add(source_sid)
             retrieved_session_ids_ordered.append(source_sid)
+            raw_score = hit.get("score")
+            retrieved_session_score_by_source_id[source_sid] = (
+                float(raw_score) if raw_score is not None else None
+            )
             session_date = date_by_memory_id[memory_id]
             memory_units.append(
                 f"[session_id:{memory_id}] [source_session_id:{source_sid}] "
@@ -551,8 +556,22 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "prompt_token_budget": prompt_budget,
                     "context_characters": len(context),
                     "context_text": context,
+                    "context_sha256": hashlib.sha256(context.encode("utf-8")).hexdigest(),
                     "context_session_ids": included_session_ids,
                     "context_session_count": len(included_session_ids),
+                    "gold_evidence_sessions_available": len(gold_session_ids),
+                    "gold_evidence_sessions_in_context": (
+                        len(set(included_session_ids) & gold_session_ids)
+                        if gold_session_ids else None
+                    ),
+                    "context_gold_evidence_recall": (
+                        len(set(included_session_ids) & gold_session_ids) / len(gold_session_ids)
+                        if gold_session_ids else None
+                    ),
+                    "context_gold_evidence_complete": (
+                        gold_session_ids.issubset(set(included_session_ids))
+                        if gold_session_ids else None
+                    ),
                     "context_session_coverage": (
                         len(included_session_ids) / max(1, len(recent_units))
                         if arm == "recent_history" else
@@ -562,6 +581,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "retrieved_session_ids": retrieved_session_ids,
                     "retrieved_session_ranking": [
                         {"rank": rank, "source_session_id": sid,
+                         "score": retrieved_session_score_by_source_id.get(sid),
                          "is_gold_evidence": sid in gold_session_ids}
                         for rank, sid in enumerate(retrieved_session_ids, 1)
                     ],
