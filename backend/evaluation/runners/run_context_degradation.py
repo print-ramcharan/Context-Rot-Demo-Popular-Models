@@ -411,7 +411,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             recent_units = [
                 (
                     f"[session_id:{sid}__occ{session_index}] "
-                    f"[source_session_id:{sid}] [session_date:{session_date}]\\n"
+                    f"[source_session_id:{sid}] [session_date:{session_date}]\n"
                     f"{session_to_text(session)}"
                 )
                 for sid, session_date, session, session_index in selected
@@ -420,7 +420,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             all_history_units = [
                 (
                     f"[session_id:{sid}__occ{session_index}] "
-                    f"[source_session_id:{sid}] [session_date:{session_date}]\\n"
+                    f"[source_session_id:{sid}] [session_date:{session_date}]\n"
                     f"{session_to_text(session)}"
                 )
                 for sid, session_date, session, session_index in all_history
