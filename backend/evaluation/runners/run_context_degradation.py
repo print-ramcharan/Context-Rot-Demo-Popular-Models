@@ -75,6 +75,29 @@ def exact_match(prediction: str, reference: str) -> float:
     return float(normalize_answer(prediction) == normalize_answer(reference))
 
 
+def retrieval_metrics(
+    retrieved_session_ids: list[str],
+    gold_session_ids: set[str],
+) -> tuple[float | None, float | None, float | None]:
+    """Return session-level Recall@K, Precision@K and MRR@K."""
+    if not gold_session_ids:
+        return None, None, None
+    if not retrieved_session_ids:
+        return 0.0, 0.0, 0.0
+    relevant = [
+        sid for sid in retrieved_session_ids
+        if sid in gold_session_ids
+    ]
+    recall = len(set(relevant)) / len(gold_session_ids)
+    precision = len(relevant) / len(retrieved_session_ids)
+    reciprocal_rank = next(
+        (1.0 / rank for rank, sid in enumerate(retrieved_session_ids, 1)
+         if sid in gold_session_ids),
+        0.0,
+    )
+    return recall, precision, reciprocal_rank
+
+
 def session_to_text(session: list[dict[str, Any]]) -> str:
     lines = []
     for turn in session:
@@ -459,25 +482,14 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     retrieved_session_ids_ordered if arm == "external_memory" else []
                 )
                 gold_session_ids = set(map(str, item.get("answer_session_ids", [])))
-                retrieved_relevant = [
-                    sid for sid in retrieved_session_ids if sid in gold_session_ids
-                ]
-                retrieval_recall = (
-                    len(set(retrieved_relevant)) / len(gold_session_ids)
-                    if arm == "external_memory" and gold_session_ids else None
-                )
-                retrieval_precision = (
-                    len(retrieved_relevant) / len(retrieved_session_ids)
-                    if arm == "external_memory" and retrieved_session_ids else
-                    (0.0 if arm == "external_memory" else None)
-                )
-                retrieval_mrr = None
-                if arm == "external_memory" and gold_session_ids:
-                    retrieval_mrr = next(
-                        (1.0 / rank for rank, sid in enumerate(retrieved_session_ids, 1)
-                         if sid in gold_session_ids),
-                        0.0,
-                    )
+                if arm == "external_memory":
+                    (
+                        retrieval_recall,
+                        retrieval_precision,
+                        retrieval_mrr,
+                    ) = retrieval_metrics(retrieved_session_ids, gold_session_ids)
+                else:
+                    retrieval_recall = retrieval_precision = retrieval_mrr = None
                 rows.append({
                     "question_id": qid,
                     "question_type": item.get("question_type"),
@@ -594,6 +606,11 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "metrics": {},
         "paired_significance": significance,
         "per_question": rows,
+        "statistical_interpretation_note": (
+            "For fewer than two paired questions, Wilcoxon p-values are null and no "
+            "inferential significance claim is supported. Single-question bootstrap "
+            "intervals are descriptive only."
+        ),
         "scoring_note": (
             "Exact match and token F1 are automatic diagnostics only. Use the official "
             "LongMemEval LLM-judge protocol for publication-quality answer scoring."
