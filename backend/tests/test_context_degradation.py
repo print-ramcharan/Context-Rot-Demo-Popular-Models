@@ -111,8 +111,8 @@ def test_retrieval_metrics_are_unavailable_without_gold_evidence():
 
 def test_fit_context_keeps_multiple_sessions_when_budget_allows():
     units = [
-        "[session_id:old] [source_session_id:old]\\n" + ("older detail " * 100),
-        "[session_id:new] [source_session_id:new]\\n" + ("newer detail " * 100),
+        "[session_id:old] [source_session_id:old]\n" + ("older detail " * 100),
+        "[session_id:new] [source_session_id:new]\n" + ("newer detail " * 100),
     ]
     context, count, chosen = fit_context(
         "What happened?", units, 256, CharacterCounter()
