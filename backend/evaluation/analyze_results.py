@@ -71,27 +71,31 @@ def _evaluate_system(
         qid = str(record["query_id"])
         doc_ids = [str(doc_id) for doc_id in record["retrieved_document_ids"]]
         relevant = {doc for doc, grade in qrels.get(qid, {}).items() if int(grade) > 0}
-        rr = 0.0
-        for rank, doc_id in enumerate(doc_ids[:10], start=1):
-            if doc_id in relevant:
-                rr = 1.0 / rank
-                break
         q_score = scores.get(qid, {})
         per_query_metrics[qid] = {
+            "ndcg@5": float(q_score.get("ndcg_cut_5", 0.0)),
             "ndcg@10": float(q_score.get("ndcg_cut_10", 0.0)),
+            "ndcg@20": float(q_score.get("ndcg_cut_20", 0.0)),
+            "map@5": float(q_score.get("map_cut_5", 0.0)),
+            "map@10": float(q_score.get("map_cut_10", 0.0)),
+            "map@20": float(q_score.get("map_cut_20", 0.0)),
+            "recall@5": float(q_score.get("recall_5", 0.0)),
             "recall@10": float(q_score.get("recall_10", 0.0)),
+            "recall@20": float(q_score.get("recall_20", 0.0)),
+            "precision@5": float(q_score.get("P_5", 0.0)),
             "precision@10": float(q_score.get("P_10", 0.0)),
-            "mrr@10": float(rr),
+            "precision@20": float(q_score.get("P_20", 0.0)),
+            "mrr@5": float(next((1.0 / rank for rank, doc_id in enumerate(doc_ids[:5], 1) if doc_id in relevant), 0.0)),
+            "mrr@10": float(next((1.0 / rank for rank, doc_id in enumerate(doc_ids[:10], 1) if doc_id in relevant), 0.0)),
+            "mrr@20": float(next((1.0 / rank for rank, doc_id in enumerate(doc_ids[:20], 1) if doc_id in relevant), 0.0)),
         }
 
     n = len(per_query_metrics)
     if n == 0:
         raise RuntimeError("No per-query metrics were produced")
     aggregate = {
-        "NDCG@10": sum(m["ndcg@10"] for m in per_query_metrics.values()) / n,
-        "Recall@10": sum(m["recall@10"] for m in per_query_metrics.values()) / n,
-        "P@10": sum(m["precision@10"] for m in per_query_metrics.values()) / n,
-        "MRR@10": sum(m["mrr@10"] for m in per_query_metrics.values()) / n,
+        metric.upper().replace("@", "@"): sum(row[metric] for row in per_query_metrics.values()) / n
+        for metric in next(iter(per_query_metrics.values()))
     }
     return {key: round(value, 8) for key, value in aggregate.items()}, per_query_metrics
 
@@ -173,7 +177,7 @@ def main() -> None:
         significance[dataset] = {
             f"{baseline}_vs_{candidate}": [
                 _paired(per_query[baseline], per_query[candidate], metric)
-                for metric in ("recall@10", "ndcg@10", "precision@10", "mrr@10")
+                for metric in ("recall@10", "ndcg@10", "precision@10", "mrr@10", "map@10")
             ]
             for baseline, candidate in (("B1", "B3"), ("B3", "B4"))
         }
