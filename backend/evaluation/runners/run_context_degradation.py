@@ -97,6 +97,34 @@ def retrieval_metrics(
     )
     return recall, precision, reciprocal_rank
 
+def extended_retrieval_metrics(
+    retrieved_session_ids: list[str],
+    gold_session_ids: set[str],
+) -> dict[str, float | int | None]:
+    """Session-level ranking metrics over unique source sessions."""
+    if not gold_session_ids:
+        return {"hit_at_k": None, "ndcg_at_k": None,
+                "average_precision_at_k": None, "evidence_completeness_at_k": None}
+    if not retrieved_session_ids:
+        return {"hit_at_k": 0, "ndcg_at_k": 0.0,
+                "average_precision_at_k": 0.0, "evidence_completeness_at_k": 0}
+    flags = [1 if sid in gold_session_ids else 0 for sid in retrieved_session_ids]
+    dcg = sum(rel / math.log2(rank + 1) for rank, rel in enumerate(flags, 1))
+    ideal_hits = min(len(gold_session_ids), len(flags))
+    idcg = sum(1.0 / math.log2(rank + 1) for rank in range(1, ideal_hits + 1))
+    hits = 0
+    precision_sum = 0.0
+    for rank, rel in enumerate(flags, 1):
+        if rel:
+            hits += 1
+            precision_sum += hits / rank
+    return {
+        "hit_at_k": int(any(flags)),
+        "ndcg_at_k": dcg / idcg if idcg else 0.0,
+        "average_precision_at_k": precision_sum / ideal_hits if ideal_hits else 0.0,
+        "evidence_completeness_at_k": int(gold_session_ids.issubset(set(retrieved_session_ids))),
+    }
+
 
 def session_to_text(session: list[dict[str, Any]]) -> str:
     lines = []
@@ -231,27 +259,29 @@ def fit_context(
     chosen_newest_first: list[str] = []
     used_chars = 0
     char_budget = max(0, max_prompt_tokens * 3 - len(base_prompt))
-    for candidate in reversed(candidates):
+    # Allocate the budget across candidate sessions so a single oversized
+    # newest session cannot silently exclude every older session.
+    newest_candidates = list(reversed(candidates))
+    for candidate_index, candidate in enumerate(newest_candidates):
         separator_chars = 2 if chosen_newest_first else 0
         remaining = char_budget - used_chars - separator_chars
         if remaining <= 0:
             break
-        if len(candidate) <= remaining:
+        slots_left = len(newest_candidates) - candidate_index
+        allocation = max(1, remaining // max(1, slots_left))
+        if len(candidate) <= allocation:
             chosen_newest_first.append(candidate)
             used_chars += len(candidate) + separator_chars
             continue
-
-        # Preserve the session identifier/date header and the newest part of
-        # an oversized session, rather than silently discarding the session.
         header, sep, body = candidate.partition("\n")
         if not sep:
             header, body = "", candidate
         header_cost = len(header) + (1 if sep else 0)
-        body_budget = max(0, remaining - header_cost)
+        body_budget = max(0, allocation - header_cost)
         if body_budget > 0:
             partial = header + ("\n" if sep else "") + body[-body_budget:]
             chosen_newest_first.append(partial)
-        break
+            used_chars += len(partial) + separator_chars
 
     chosen = list(reversed(chosen_newest_first))
     while True:
@@ -488,8 +518,16 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                         retrieval_precision,
                         retrieval_mrr,
                     ) = retrieval_metrics(retrieved_session_ids, gold_session_ids)
+                    retrieval_extended = extended_retrieval_metrics(
+                        retrieved_session_ids, gold_session_ids
+                    )
                 else:
                     retrieval_recall = retrieval_precision = retrieval_mrr = None
+                    retrieval_extended = {
+                        "hit_at_k": None, "ndcg_at_k": None,
+                        "average_precision_at_k": None,
+                        "evidence_completeness_at_k": None,
+                    }
                 rows.append({
                     "question_id": qid,
                     "question_type": item.get("question_type"),
@@ -505,13 +543,30 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "prompt_tokens": prompt_tokens,
                     "prompt_token_budget": prompt_budget,
                     "context_characters": len(context),
+                    "context_text": context,
                     "context_session_ids": included_session_ids,
+                    "context_session_count": len(included_session_ids),
+                    "context_session_coverage": (
+                        len(included_session_ids) / max(1, len(selected))
+                        if arm == "recent_history" else
+                        len(included_session_ids) / max(1, len(all_history_units))
+                        if arm == "long_context" else None
+                    ),
                     "retrieved_session_ids": retrieved_session_ids,
+                    "retrieved_session_ranking": [
+                        {"rank": rank, "source_session_id": sid,
+                         "is_gold_evidence": sid in gold_session_ids}
+                        for rank, sid in enumerate(retrieved_session_ids, 1)
+                    ],
                     "retrieved_session_count": len(retrieved_session_ids),
                     "gold_session_count": len(gold_session_ids),
                     "retrieval_recall_at_k": retrieval_recall,
                     "retrieval_precision_at_k": retrieval_precision,
                     "retrieval_mrr_at_k": retrieval_mrr,
+                    "retrieval_hit_at_k": retrieval_extended["hit_at_k"],
+                    "retrieval_ndcg_at_k": retrieval_extended["ndcg_at_k"],
+                    "retrieval_map_at_k": retrieval_extended["average_precision_at_k"],
+                    "retrieval_evidence_completeness_at_k": retrieval_extended["evidence_completeness_at_k"],
                     "generation_latency_ms": round(elapsed_ms, 3),
                     "reported_latency_ms": generated.get("latency_ms"),
                     "tokens_used": generated.get("tokens_used", {}),
