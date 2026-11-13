@@ -74,6 +74,9 @@ def summarize_longmemeval(run: dict[str, Any], judged: dict[str, Any] | None) ->
             "automatic_exact_match": mean("exact_match"),
             "automatic_token_f1": mean("token_f1"),
             "mean_prompt_tokens": mean("prompt_tokens"),
+            "mean_context_prompt_token_delta": mean("context_prompt_token_delta"),
+            "mean_context_prompt_budget_utilization": mean("context_prompt_budget_utilization"),
+            "long_context_full_history_fit_rate": mean("long_context_full_history_fit"),
             "mean_generation_latency_ms": mean("generation_latency_ms"),
             "mean_retrieval_latency_ms": mean("memory_retrieval_latency_ms"),
             "p50_generation_latency_ms": (
