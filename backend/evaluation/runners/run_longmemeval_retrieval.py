@@ -52,6 +52,7 @@ def evaluate_item(
     dataset_index: int,
     dataset_path: Path,
     output_root: Path,
+    run_id: str,
     embedder: EmbeddingGenerator,
     top_k: int,
     chunk_size: int,
@@ -158,7 +159,7 @@ def main() -> None:
     rows = []
     for index, item in enumerate(items):
         rows.append(evaluate_item(
-            item, index, args.dataset, args.output_dir, embedder,
+            item, index, args.dataset, args.output_dir, run_id, embedder,
             args.top_k, args.chunk_size, args.overlap,
         ))
         if (index + 1) % 10 == 0:
