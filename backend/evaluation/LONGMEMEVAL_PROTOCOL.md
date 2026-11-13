@@ -37,39 +37,34 @@ results.
 
 ## Main run
 
-Choose a long-context budget supported by the reader model. To test a model with
-a 128k context window, start conservatively (for example, 120000) and let the
-provider's tokenizer enforce the actual prompt limit.
+The comparison uses the five most recent sessions for `recent_history`, all
+available sessions for `long_context`, and a full-history index for
+`external_memory`. The context packer distributes the available budget across
+sessions and records the exact context text and source-session provenance.
+Choose a long-context budget that the configured reader model supports.
+
+The default quota guard allows only four generation calls. A complete 500-question
+run with one history-size condition needs 2,000 calls (500 questions x four arms),
+so explicitly raise the cap:
 
 ```bash
 python -m evaluation.runners.run_context_degradation \
   --dataset evaluation/data/longmemeval_s_cleaned.json \
   --output-dir evaluation/results/context_degradation_main \
-  --history-sizes all \
-  --max-prompt-tokens 4096 \
-  --long-context-max-prompt-tokens 120000 \
+  --history-sizes 5 \
+  --max-prompt-tokens 2048 \
+  --long-context-max-prompt-tokens 32768 \
   --candidate-pool-size 100 \
-  --retrieval-k 30 \
+  --retrieval-k 5 \
   --rerank-model cross-encoder/ms-marco-MiniLM-L-6-v2 \
-  --limit 0
+  --limit 0 \
+  --max-generation-calls 2000
 ```
 
-The four arms are:
-- `question_only`: no conversation history.
-- `recent_history`: most recent history sessions under the constrained prompt budget.
-- `long_context`: all available history sessions up to the separately declared long-context budget.
-- `external_memory`: BM25 + FAISS dense retrieval + reciprocal-rank fusion + cross-encoder reranking, packed under the constrained prompt budget.
-
-The external-memory arm uses the repository's existing ConversationStore chunking,
-FAISS cosine index, BM25 implementation, RRF implementation, and cross-encoder.
-The retrieved chunk's `session_id` metadata is retained when packing evidence.
-The runner also records session Recall@K, Precision@K, MRR@K, retrieval latency,
-prompt tokens, generation latency, and answer diagnostics. Retrieval metrics are
-not defined for no-evidence/abstention items.
-
-The main run above uses one history-size condition (`all`) to avoid multiplying
-the 500-question generation cost. Run `5,10,20,all` as a separate sensitivity
-experiment only if compute/API budget permits.
+Before launching this run, validate the selected long-context budget with the
+provider and run a small smoke test. The full run is an API-cost-consuming
+experiment. Do not run it until the four-arm smoke test, context provenance,
+and token-budget checks pass.
 
 ## Official answer judging
 
@@ -124,3 +119,42 @@ as the official judge.
 - The long-context arm is a valid full-history baseline only when its token budget
   is high enough that the provider tokenizer confirms the entire history fits.
   Otherwise describe it as a truncated long-context baseline.
+
+## Standard BEIR retrieval benchmarks
+
+Run the repository's standard BEIR SciFact and NFCorpus retrieval experiments
+(B1 BM25, B2 dense, B3 hybrid RRF, B4 hybrid plus reranker) in a dedicated run
+directory. These are standard BEIR datasets; do not mix their retrieval metrics
+with LongMemEval answer-quality metrics.
+
+```bash
+python -m evaluation.runners.run_retrieval \
+  --run-dir evaluation/results/runs/beir_paper
+
+python -m evaluation.analyze_results \
+  --run-dir evaluation/results/runs/beir_paper/raw \
+  --output-dir evaluation/results/runs/beir_paper/processed_rank_preserving
+```
+
+The analysis verifies full query coverage and writes aggregate official BEIR
+metrics, paired significance tests, and per-query metrics.
+
+## One JSON for paper analysis
+
+After the LongMemEval run, official judging, and BEIR analysis are complete,
+build one combined, auditable JSON bundle:
+
+```bash
+python -m evaluation.build_paper_metrics \
+  --longmemeval-json evaluation/results/context_degradation_main/context_degradation_<RUN_ID>.json \
+  --official-longmemeval-analysis evaluation/results/context_degradation_main/longmemeval_official_analysis_<RUN_ID>.json \
+  --beir-processed-dir evaluation/results/runs/beir_paper/processed_rank_preserving \
+  --output evaluation/results/paper_metrics.json
+```
+
+The JSON contains benchmark provenance, per-question LongMemEval contexts and
+predictions, official judged per-question labels (when supplied), BEIR
+per-query and aggregate metrics, paired statistical results, token accounting,
+and indexing/retrieval/generation timing. If official judging or BEIR results
+are omitted, the JSON marks them as unavailable; it never fills in or fabricates
+scores. The JSON is the artifact to share for paper writing.
