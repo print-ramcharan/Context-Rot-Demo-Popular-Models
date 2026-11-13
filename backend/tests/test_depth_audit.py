@@ -1,6 +1,5 @@
 from evaluation.runners.run_retrieval import _collapse_parent_candidates, _map_to_parent_records
-
-
+from evaluation.report_depth_audit import _returned_count
 def _chunk(parent_id, score):
     return {"text": parent_id, "score": score, "metadata": {"parent_id": parent_id}}
 
@@ -32,3 +31,18 @@ def test_mapping_reports_honest_shortfall():
     assert ids == ["doc-a", "doc-b"]
     assert diagnostics["unique_parent_count_before_reranking"] == 2
     assert diagnostics["parent_deduplication_count"] == 1
+
+def test_returned_count_supports_current_runner_field():
+    item = {
+        "retrieved_count": 20,
+        "requested_depth": 20
+    }
+    assert _returned_count(item) == 20
+
+
+def test_returned_count_supports_legacy_field():
+    item = {
+        "returned_count": 15,
+        "requested_depth": 20
+    }
+    assert _returned_count(item) == 15

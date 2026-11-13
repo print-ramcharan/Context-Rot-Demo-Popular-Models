@@ -10,8 +10,11 @@ from typing import Dict, List
 import numpy as np
 from beir.retrieval.evaluation import EvaluateRetrieval
 
-from evaluation.metrics.statistical_tests import paired_bootstrap_ci, wilcoxon_signed_rank_test
-
+from evaluation.metrics.statistical_tests import (
+    paired_bootstrap_ci,
+    wilcoxon_signed_rank_test,
+    holm_bonferroni,
+)
 
 METRICS = ("NDCG@10", "Recall@10", "P@10", "MRR@10")
 
@@ -124,7 +127,10 @@ def main() -> None:
             config: {record["query_id"] for record in records}
             for config, records in records_by_config.items()
         }
-        if any(not ids for ids in query_ids.values()) or len(set(query_ids.values())) != 1:
+        if (
+            any(not ids for ids in query_ids.values())
+            or len({frozenset(ids) for ids in query_ids.values()}) != 1
+        ):
             counts = {config: len(ids) for config, ids in query_ids.items()}
             raise RuntimeError(f"Incomplete or misaligned results for {dataset}: {counts}")
         official[dataset] = {
@@ -138,6 +144,25 @@ def main() -> None:
             ]
             for baseline, candidate in (("B1", "B3"), ("B3", "B4"))
         }
+
+    # Apply Holm-Bonferroni across all planned tests.
+    all_tests = [
+        result
+        for dataset_results in significance.values()
+        for comparison_results in dataset_results.values()
+        for result in comparison_results
+    ]
+
+    adjusted_p_values = holm_bonferroni([
+        result["wilcoxon_p_value"]
+        for result in all_tests
+    ])
+
+    for result, adjusted_p in zip(all_tests, adjusted_p_values):
+        result["wilcoxon_p_value_holm"] = adjusted_p
+        result["significant_holm_0_05"] = (
+            adjusted_p is not None and adjusted_p < 0.05
+        )
 
     (processed / "official_beir_metrics.json").write_text(
         json.dumps(official, indent=2), encoding="utf-8"

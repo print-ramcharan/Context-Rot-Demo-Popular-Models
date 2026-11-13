@@ -43,3 +43,31 @@ def wilcoxon_signed_rank_test(before: Sequence[float], after: Sequence[float]):
         # All differences are zero -> no evidence of a shift.
         return (0.0, 1.0)
     return (float(stat), float(pvalue))
+
+def holm_bonferroni(p_values: Sequence[float]):
+    """Return Holm-Bonferroni adjusted p-values in original order."""
+    values = list(p_values)
+    adjusted = [None] * len(values)
+
+    valid = [
+        (i, float(p))
+        for i, p in enumerate(values)
+        if p is not None
+    ]
+
+    if not valid:
+        return adjusted
+
+    if any(not 0.0 <= p <= 1.0 for _, p in valid):
+        raise ValueError("p-values must be between 0 and 1")
+
+    ordered = sorted(valid, key=lambda item: item[1])
+    m = len(ordered)
+    running_max = 0.0
+
+    for rank, (original_index, p_value) in enumerate(ordered):
+        corrected = min(1.0, (m - rank) * p_value)
+        running_max = max(running_max, corrected)
+        adjusted[original_index] = running_max
+
+    return adjusted

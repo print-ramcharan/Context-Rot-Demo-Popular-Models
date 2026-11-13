@@ -7,6 +7,8 @@ import json
 from collections import Counter
 from pathlib import Path
 
+def _returned_count(item):
+    return int(item.get("retrieved_count", item.get("returned_count", 0)))
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -31,8 +33,12 @@ def main() -> None:
         "|---|---:|---:|---:|---:|---|",
     ]
     for (dataset, config), items in records.items():
-        counts = Counter(item["returned_count"] for item in items)
-        exact = sum(item["returned_count"] == item["requested_depth"] for item in items)
+        counts = Counter(_returned_count(item) for item in items)
+
+        exact = sum(
+            _returned_count(item) == item["requested_depth"]
+            for item in items
+        )
         shortfall = sum(item["depth_shortfall"] > 0 for item in items)
         lines.append(
             f"| {dataset} | {config} | {len(items)} | {exact} | {shortfall} | "
