@@ -57,6 +57,18 @@ def summarize_longmemeval(run: dict[str, Any], judged: dict[str, Any] | None) ->
             return sum(values) / len(values) if values else None
 
         latencies = sorted(float(row["generation_latency_ms"]) for row in rows)
+        token_rows = [row.get("tokens_used") or {} for row in rows]
+        token_usage = {}
+        for token_key in ("prompt", "completion", "total"):
+            values = [
+                float(item[token_key]) for item in token_rows
+                if isinstance(item, dict) and item.get(token_key) is not None
+            ]
+            token_usage[token_key] = {
+                "sum": sum(values) if values else None,
+                "mean": sum(values) / len(values) if values else None,
+                "observed_calls": len(values),
+            }
         arm_summary[arm] = {
             "n": len(rows),
             "automatic_exact_match": mean("exact_match"),
@@ -80,6 +92,9 @@ def summarize_longmemeval(run: dict[str, Any], judged: dict[str, Any] | None) ->
                 "retrieval_evidence_completeness_at_k"
             ),
             "mean_context_session_coverage": mean("context_session_coverage"),
+            "token_usage": token_usage,
+            "mean_memory_indexing_latency_ms": mean("memory_indexing_latency_ms"),
+            "mean_memory_index_size_bytes": mean("memory_index_size_bytes"),
         }
 
     judged_summary = None
