@@ -129,3 +129,44 @@ for every arm. Do not treat retrieval Recall@K as answer accuracy.
   deletion propagation (including backups/caches), retention, encryption in
   transit/at rest, auditability, and export. Do not claim these controls from
   the current local FAISS prototype.
+
+
+## Controlled context-degradation QA experiment
+
+The runner `evaluation.runners.run_context_degradation` compares three arms
+on LongMemEval questions:
+
+1. `question_only`: no conversation history.
+2. `recent_history`: the most recent available sessions, packed in recency
+   order under a fixed total prompt-token budget (long-context/truncation
+   baseline).
+3. `external_memory`: top retrieved conversation chunks from the same
+   available history, packed under the same prompt-token budget.
+
+The experiment repeats these arms at increasing history sizes (default
+`5,10,20,all`). It uses the same configured LLM, system prompt, decoding
+settings, and output-token limit for all arms. Semantic response caching is
+disabled. The selected provider's tokenizer/count-token API enforces the
+prompt budget; unsupported token counting fails rather than silently using a
+word-count approximation.
+
+Run a small smoke test first:
+
+```bash
+cd backend
+python -m evaluation.runners.run_context_degradation \\
+  --dataset evaluation/data/longmemeval_s_cleaned.json \\
+  --output-dir evaluation/results/context_degradation \\
+  --history-sizes 5,10,20,all \\
+  --max-prompt-tokens 4096 \\
+  --limit 5
+```
+
+Use `--limit 0` for the full dataset after validating the smoke-test output.
+The runner saves question-level predictions, included session IDs, prompt
+token counts, exact match, token F1, and generation latency in timestamped
+JSON and CSV files. Exact match and token F1 are diagnostics only. For
+publication, score the saved predictions with the official LongMemEval
+LLM-judge protocol and report its results separately. The recent-history arm
+is a long-context prompting/truncation baseline; it is not a Longformer model
+and must not be labelled as one.
