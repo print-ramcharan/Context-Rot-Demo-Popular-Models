@@ -229,21 +229,14 @@ def run_dataset(
             qrel_grades = list(qrels.get(qid, {}).values())
             metrics = compute_query_metrics(grades, total_relevant, qrel_grades=qrel_grades)
 
-            rerank_ms = 0.0
-            if config["rerank"] and reranker is not None:
-                rerank_ms = _measure_rerank(
-                    query_text,
-                    depth["rerank_candidates"],
-                    reranker,
-                    cfg,
-                )
+            rerank_ms = float(depth.get("reranking_latency_ms", 0.0))
 
             record = {
                 "dataset": dataset_name,
                 "query_id": qid,
                 "configuration": config_id,
                 "retrieved_document_ids": parent_ids,
-                "retrieval_latency_ms": round(config_ms, 3),
+                "retrieval_latency_ms": round(max(0.0, config_ms - rerank_ms), 3),
                 "reranking_latency_ms": round(rerank_ms, 3),
                 "scores": scores,
                 "grades": grades,
@@ -317,15 +310,35 @@ def _run_config_with_depth(
         else 0
     )
     parent_candidates = _collapse_parent_candidates(candidate_chunks)
-    rerank_candidates = parent_candidates[: int(retrieval_cfg["rerank_candidate_pool"])]
-    if config["rerank"] and reranker is not None:
-        reranked = reranker.rerank(
+    reranking_latency_ms = 0.0
+    rerank_candidates: List[Dict[str, Any]] = []
+    if config["rerank"]:
+        if reranker is None or getattr(reranker, "model", None) is None:
+            raise RuntimeError(
+                "B4 requires a loaded cross-encoder; refusing to label an unreranked run as B4."
+            )
+        # Rerank chunk candidates BEFORE parent aggregation. This lets the
+        # cross-encoder choose the most relevant passage when a document has
+        # multiple candidate chunks.
+        rerank_candidates = candidate_chunks[: int(retrieval_cfg["rerank_candidate_pool"])]
+        rerank_inputs = []
+        for chunk in rerank_candidates:
+            candidate = dict(chunk)
+            metadata = candidate.get("metadata", {})
+            title = str(metadata.get("title") or metadata.get("source") or "")
+            passage = str(candidate.get("text", ""))
+            candidate["rerank_text"] = f"{title}\n{passage}".strip() if title else passage
+            rerank_inputs.append(candidate)
+        rerank_started = time.perf_counter()
+        reranked_chunks = reranker.rerank(
             query,
-            rerank_candidates,
-            top_n=int(retrieval_cfg["rerank_top_n"]),
+            rerank_inputs,
+            top_n=len(rerank_inputs),
         )
-        final_chunks = reranked
-        after_count = len(reranked)
+        reranking_latency_ms = (time.perf_counter() - rerank_started) * 1000.0
+        final_chunks = _collapse_parent_candidates(reranked_chunks)
+        final_chunks = final_chunks[: int(retrieval_cfg["evaluation_depth"])]
+        after_count = len(final_chunks)
     else:
         final_chunks = parent_candidates
         after_count = len(parent_candidates)
@@ -334,21 +347,10 @@ def _run_config_with_depth(
         "unique_parent_count_before_reranking": len(parent_candidates),
         "unique_parent_count_after_reranking": after_count,
         "filter_rejection_count": filter_rejection_count,
-        "rerank_candidates": rerank_candidates,
+        "rerank_candidate_chunk_count": len(rerank_candidates),
+        "reranking_latency_ms": reranking_latency_ms,
     }
     return final_chunks, diagnostics
-
-
-def _measure_rerank(
-    query: str,
-    retrieved_chunks: List[Dict[str, Any]],
-    reranker: Any,
-    retrieval_cfg: Dict[str, Any],
-) -> float:
-    pool = retrieved_chunks[: int(retrieval_cfg["rerank_candidate_pool"])]
-    start = time.perf_counter()
-    reranker.rerank(query, pool, top_n=int(retrieval_cfg["rerank_top_n"]))
-    return (time.perf_counter() - start) * 1000.0
 
 
 def aggregate_records(records: List[Dict[str, Any]]) -> Dict[str, Any]:
