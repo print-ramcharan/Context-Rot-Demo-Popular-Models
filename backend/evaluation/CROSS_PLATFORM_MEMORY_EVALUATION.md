@@ -13,14 +13,18 @@ From `backend/`:
 
 ```bash
 python -m evaluation.runners.run_memory_benchmark \
-  --input evaluation/datasets/cross_platform_memory.jsonl \
+  --input evaluation/datasets/cross_platform_memory.example.jsonl \
   --output-dir evaluation/results/memory
 ```
+
+The checked-in JSONL is a tiny smoke-test example, not a research benchmark.
+Replace it with a consented, de-identified and independently labelled dataset
+before reporting scientific metrics.
 
 The runner uses the existing `ConversationStore` and
 `EmbeddingGenerator`. Memories retain their source-platform metadata. Queries
 are issued with no platform filter, matching the shared-memory use case. The
-runner reports Recall@K, MRR@K, cross-platform Recall@K, mean/p50/p95 retrieval
+runner reports Recall@K, MRR, cross-platform Recall@K, mean/p50/p95 retrieval
 latency, vector count, chunk/session count, and on-disk store size. Per-query
 rankings are preserved in `memory_retrieval_results.json`.
 
