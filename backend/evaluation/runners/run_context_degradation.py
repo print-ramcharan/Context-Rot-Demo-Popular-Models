@@ -103,7 +103,7 @@ def build_hybrid_memory_retriever(
         alpha=0.5,
         enable_rerank=True,
         rerank_candidate_pool=candidate_pool_size,
-        rerank_top_n=retrieval_k,
+        rerank_top_n=candidate_pool_size,
     )
     retriever.set_reranker(reranker)
     return retriever
@@ -292,7 +292,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             retrieval_started = time.perf_counter()
             hits = memory_retriever.retrieve(
                 query=question,
-                k=args.retrieval_k,
+                k=args.candidate_pool_size,
                 threshold=0.0,
                 mode="hybrid",
                 use_cache=False,
@@ -300,6 +300,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             retrieval_latency_ms = (time.perf_counter() - retrieval_started) * 1000.0
             memory_units = []
             seen_sessions = set()
+            retrieved_session_ids_ordered = []
             for hit in hits:
                 metadata = hit.get("metadata", {})
                 sid = str(metadata.get("session_id", ""))
@@ -308,7 +309,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 if sid in seen_sessions:
                     continue
                 seen_sessions.add(sid)
+                retrieved_session_ids_ordered.append(sid)
                 memory_units.append(f"[session_id:{sid}]\n{hit.get('text', '')}")
+                if len(memory_units) >= args.retrieval_k:
+                    break
 
             arms = {
                 "question_only": ([], args.max_prompt_tokens),
@@ -334,7 +338,9 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 )
                 elapsed_ms = (time.perf_counter() - start) * 1000.0
                 prediction = str(generated.get("response", "")).strip()
-                retrieved_session_ids = list(seen_sessions) if arm == "external_memory" else []
+                retrieved_session_ids = (
+                    retrieved_session_ids_ordered if arm == "external_memory" else []
+                )
                 gold_session_ids = set(map(str, item.get("answer_session_ids", [])))
                 retrieved_relevant = [
                     sid for sid in retrieved_session_ids if sid in gold_session_ids
@@ -344,7 +350,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     if arm == "external_memory" and gold_session_ids else None
                 )
                 retrieval_precision = (
-                    len(retrieved_relevant) / len(retrieved_session_ids)
+                    len(retrieved_relevant) / args.retrieval_k
                     if arm == "external_memory" and retrieved_session_ids else None
                 )
                 retrieval_mrr = None
