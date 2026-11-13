@@ -353,7 +353,7 @@ class LLMInference:
         max_tokens: int,
         temperature: float
     ) -> dict:
-        """Generate using only Gemini 1.5 Flash."""
+        """Generate using the configured Gemini Flash Lite model."""
         from google.genai import types
 
         response = self.client.models.generate_content(
