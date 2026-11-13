@@ -96,8 +96,11 @@ class PromptTokenCounter:
                 import tiktoken
                 try:
                     self._encoding = tiktoken.encoding_for_model(llm.model)
-                except KeyError:
-                    self._encoding = tiktoken.get_encoding("cl100k_base")
+                except KeyError as exc:
+                    raise RuntimeError(
+                        f"No exact tiktoken encoding is registered for model {llm.model!r}; "
+                        "choose a supported model or add its documented tokenizer."
+                    ) from exc
             except ImportError as exc:
                 raise RuntimeError(
                     "Install tiktoken for OpenAI token-budget enforcement: pip install tiktoken"
