@@ -15,6 +15,7 @@ import json
 import math
 import statistics
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +51,8 @@ def percentile(values: list[float], p: float) -> float | None:
 def run(args: argparse.Namespace) -> dict[str, Any]:
     cases = load_cases(args.input)
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    store_dir = args.output_dir / "conversation_store"
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    store_dir = args.output_dir / "stores" / run_id
     store = ConversationStore(str(store_dir))
     embedder = EmbeddingGenerator(
         model_name=args.embedding_model,
@@ -137,6 +139,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "benchmark": "cross_platform_conversation_memory_retrieval",
         "note": "Retrieval-only; does not measure generated answer quality.",
         "embedding_model": args.embedding_model,
+        "run_id_utc": run_id,
         "k": args.k,
         "n_queries": len(per_query),
         "n_unique_memories": len(seen),
