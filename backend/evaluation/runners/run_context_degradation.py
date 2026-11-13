@@ -1,10 +1,10 @@
 """Controlled LongMemEval context-degradation and external-memory QA experiment.
 
-Compares question-only, recent-history (long-context/truncation), and retrieved
-external-memory prompts under one fixed prompt-token budget and identical
-generation settings. Writes predictions plus exact-match/token-F1 diagnostics.
-For publication, also run the official LongMemEval LLM-judge evaluator on the
-saved predictions; token F1 is only a transparent automatic diagnostic.
+Compares question-only, recent-history, full-history long-context, and external
+memory retrieval. The memory index is built from all available history sessions;
+recent-history and long-context conditions use independently defined windows and
+token budgets. Writes per-question provenance and automatic answer diagnostics.
+For publication, also run the official LongMemEval LLM-judge evaluator.
 """
 from __future__ import annotations
 
