@@ -33,10 +33,11 @@ completed command. Unrun experiments are not represented as results.
   requested-depth, returned-count, and shortfall diagnostics.
 - Analysis validates that all four configurations contain the same query IDs
   and applies Holm-Bonferroni adjustment across the planned paired tests.
-- A timestamped run directory preserves each corrected run and its metadata.
-- A cross-platform memory retrieval harness now exercises the existing
-  ConversationStore and reports Recall@K, MRR, cross-platform Recall@K,
-  retrieval latency percentiles, and local store size.
+- Timestamped run directories preserve corrected benchmark outputs and metadata.
+- Cross-platform memory retrieval harness reports Recall@K, MRR,
+  cross-platform Recall@K, retrieval latency percentiles, and local store size.
+- LongMemEval evidence-session retrieval runner uses isolated per-question
+  stores and reports gold session Recall@K/MRR and resource diagnostics.
 
 ## Required execution
 
@@ -53,8 +54,8 @@ python -m evaluation.report_depth_audit \
   --run-dir evaluation/results/runs/depth_audit_<timestamp>
 ```
 
-Run the cross-platform memory retrieval harness with an independently labelled
-dataset (the checked-in example is only a smoke-test fixture):
+Run the cross-platform harness with an independently labelled dataset (the
+checked-in example is only a smoke-test fixture):
 
 ```bash
 cd backend
@@ -63,11 +64,22 @@ python -m evaluation.runners.run_memory_benchmark \
   --output-dir evaluation/results/memory
 ```
 
+Run LongMemEval evidence-session retrieval after downloading the official
+cleaned S dataset from the upstream Hugging Face dataset:
+
+```bash
+cd backend
+python -m evaluation.runners.run_longmemeval_retrieval \
+  --dataset evaluation/data/longmemeval_s_cleaned.json \
+  --output-dir evaluation/results/longmemeval \
+  --top-k 10
+```
+
 ## Not completed
 
 No measured results currently exist for LongMemEval answer quality, Gemini
 answer generation, context-degradation curves, Longformer, advanced RAG
 framework comparisons, RAM profiling, production-scale concurrency, or
-end-to-end security controls. The memory harness is retrieval-only and does
+end-to-end security controls. The memory harnesses are retrieval-only and do
 not establish improved generated answers. These remain limitations until
 their experiments are executed on appropriate datasets and infrastructure.
