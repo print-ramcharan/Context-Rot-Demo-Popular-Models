@@ -145,10 +145,12 @@ on LongMemEval questions:
 
 The experiment repeats these arms at increasing history sizes (default
 `5,10,20,all`). It uses the same configured LLM, system prompt, decoding
-settings, and output-token limit for all arms. Semantic response caching is
-disabled. The selected provider's tokenizer/count-token API enforces the
-prompt budget; unsupported token counting fails rather than silently using a
-word-count approximation.
+settings, and output-token limit for all arms. LongMemEval's question date is
+included for temporal questions. Semantic response caching is disabled. A
+conservative local estimate is used to pack evidence, then the final prompt is
+checked with the selected provider's tokenizer/count-token API; evidence is
+removed until the actual prompt is within budget. Unsupported token counting
+fails rather than silently using a word-count approximation.
 
 Run a small smoke test first:
 
