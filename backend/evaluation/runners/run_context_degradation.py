@@ -127,13 +127,19 @@ def fit_context(
     counter: PromptTokenCounter,
 ) -> tuple[str, int]:
     """Greedily pack whole evidence units without exceeding the prompt budget."""
+    empty_prompt_tokens = counter.count(build_prompt(question, ""))
+    if empty_prompt_tokens > max_prompt_tokens:
+        raise ValueError(
+            f"Question/instructions alone require {empty_prompt_tokens} tokens, "
+            f"exceeding budget {max_prompt_tokens}"
+        )
     chosen: list[str] = []
     for candidate in candidates:
         trial = "\n\n".join(chosen + [candidate])
         if counter.count(build_prompt(question, trial)) <= max_prompt_tokens:
             chosen.append(candidate)
     context = "\n\n".join(chosen)
-    return context, counter.count(build_prompt(question, context))
+    return context, counter.count(build_prompt(question, context)), chosen
 
 
 def make_llm(provider: str | None, model: str | None, config_path: Path) -> LLMInference:
@@ -165,6 +171,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     if args.limit:
         items = items[:args.limit]
 
+    args.output_dir.mkdir(parents=True, exist_ok=True)
     llm = make_llm(args.provider, args.model, args.config)
     counter = PromptTokenCounter(llm)
     embedder = EmbeddingGenerator(
@@ -173,7 +180,6 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         cache_path=str(args.output_dir / "embedding_cache.sqlite"),
         cache_enabled=True,
     )
-    args.output_dir.mkdir(parents=True, exist_ok=True)
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     rows: list[dict[str, Any]] = []
     history_sizes = args.history_sizes.split(",")
@@ -232,10 +238,15 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 "external_memory": memory_units,
             }
             for arm, units in arms.items():
-                context, prompt_tokens = fit_context(
+                context, prompt_tokens, selected_units = fit_context(
                     question, units, args.max_prompt_tokens, counter
                 )
                 prompt = build_prompt(question, context)
+                included_session_ids = []
+                for unit in selected_units:
+                    match = re.search(r"\[session_id:([^\]]+)\]", unit)
+                    if match and match.group(1) not in included_session_ids:
+                        included_session_ids.append(match.group(1))
                 start = time.perf_counter()
                 generated = llm.generate(
                     prompt,
@@ -256,9 +267,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "token_f1": token_f1(prediction, answer),
                     "prompt_tokens": prompt_tokens,
                     "context_characters": len(context),
-                    "context_session_ids": sorted(seen_sessions) if arm == "external_memory" else (
-                        [sid for sid, _ in selected] if arm == "recent_history" else []
-                    ),
+                    "context_session_ids": included_session_ids,
                     "generation_latency_ms": round(elapsed_ms, 3),
                     "reported_latency_ms": generated.get("latency_ms"),
                     "tokens_used": generated.get("tokens_used", {}),
