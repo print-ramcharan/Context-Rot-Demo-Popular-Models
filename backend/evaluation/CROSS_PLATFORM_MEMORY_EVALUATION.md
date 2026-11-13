@@ -165,8 +165,20 @@ python -m evaluation.runners.run_context_degradation \\
 Use `--limit 0` for the full dataset after validating the smoke-test output.
 The runner saves question-level predictions, included session IDs, prompt
 token counts, exact match, token F1, and generation latency in timestamped
-JSON and CSV files. Exact match and token F1 are diagnostics only. For
-publication, score the saved predictions with the official LongMemEval
-LLM-judge protocol and report its results separately. The recent-history arm
-is a long-context prompting/truncation baseline; it is not a Longformer model
-and must not be labelled as one.
+JSON and CSV files. It also writes one official-evaluator JSONL hypothesis
+file for each history-size/arm combination, with `question_id` and
+`hypothesis` fields. Score each hypothesis file with the upstream evaluator:
+
+```bash
+export OPENAI_API_KEY=...
+cd /path/to/LongMemEval/src/evaluation
+python3 evaluate_qa.py gpt-4o /path/to/hypotheses_all_external_memory_<run>.jsonl /path/to/longmemeval_s_cleaned.json
+python3 print_qa_metrics.py gpt-4o /path/to/hypotheses_all_external_memory_<run>.jsonl.log /path/to/longmemeval_s_cleaned.json
+```
+
+The upstream evaluator expects JSONL records containing `question_id` and
+`hypothesis`, and its QA metric is LLM-judge accuracy. Exact match and token
+F1 in this repository are diagnostics only. For publication, report the
+official judge score separately. The recent-history arm is a long-context
+prompting/truncation baseline; it is not a Longformer model and must not be
+labelled as one.
