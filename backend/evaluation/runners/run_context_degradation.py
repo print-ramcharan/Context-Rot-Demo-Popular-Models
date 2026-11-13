@@ -25,6 +25,11 @@ import yaml
 from conversation_store import ConversationStore
 from src.embedding import EmbeddingGenerator
 from src.inference import LLMInference
+from evaluation.metrics.statistical_tests import (
+    paired_bootstrap_ci,
+    wilcoxon_signed_rank_test,
+    holm_bonferroni,
+)
 
 
 def normalize_answer(text: str) -> str:
@@ -295,6 +300,47 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         grouped[(row["history_size"], row["arm"])].append(row)
+    significance: dict[str, list[dict[str, Any]]] = {}
+    all_tests: list[dict[str, Any]] = []
+    row_lookup = {
+        (row["question_id"], row["history_size"], row["arm"]): row
+        for row in rows
+    }
+    for history_size in history_sizes:
+        significance[history_size] = []
+        for baseline in ("recent_history", "question_only"):
+            for metric in ("token_f1", "exact_match"):
+                differences = [
+                    row_lookup[(str(item["question_id"]), history_size, "external_memory")][metric]
+                    - row_lookup[(str(item["question_id"]), history_size, baseline)][metric]
+                    for item in items
+                ]
+                before = [
+                    row_lookup[(str(item["question_id"]), history_size, baseline)][metric]
+                    for item in items
+                ]
+                after = [
+                    row_lookup[(str(item["question_id"]), history_size, "external_memory")][metric]
+                    for item in items
+                ]
+                test = wilcoxon_signed_rank_test(before, after)
+                result = {
+                    "comparison": f"external_memory_vs_{baseline}",
+                    "metric": metric,
+                    "n_questions": len(differences),
+                    "mean_difference": statistics.mean(differences) if differences else 0.0,
+                    "bootstrap_ci_95": list(paired_bootstrap_ci(differences)),
+                    "wilcoxon_statistic": test[0] if test else None,
+                    "wilcoxon_p_value": test[1] if test else None,
+                }
+                significance[history_size].append(result)
+                all_tests.append(result)
+
+    adjusted = holm_bonferroni([test["wilcoxon_p_value"] for test in all_tests])
+    for test, adjusted_p in zip(all_tests, adjusted):
+        test["wilcoxon_p_value_holm"] = adjusted_p
+        test["significant_holm_0_05"] = adjusted_p is not None and adjusted_p < 0.05
+
     summary = {
         "benchmark": "LongMemEval controlled context-degradation",
         "run_id_utc": run_id,
@@ -307,6 +353,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "temperature": args.temperature,
         "max_output_tokens": args.max_output_tokens,
         "metrics": {},
+        "paired_significance": significance,
         "per_question": rows,
         "scoring_note": (
             "Exact match and token F1 are automatic diagnostics only. Use the official "
