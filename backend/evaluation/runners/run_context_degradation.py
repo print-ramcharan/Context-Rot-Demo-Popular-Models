@@ -125,21 +125,33 @@ def fit_context(
     candidates: list[str],
     max_prompt_tokens: int,
     counter: PromptTokenCounter,
-) -> tuple[str, int]:
-    """Greedily pack whole evidence units without exceeding the prompt budget."""
-    empty_prompt_tokens = counter.count(build_prompt(question, ""))
-    if empty_prompt_tokens > max_prompt_tokens:
-        raise ValueError(
-            f"Question/instructions alone require {empty_prompt_tokens} tokens, "
-            f"exceeding budget {max_prompt_tokens}"
-        )
+) -> tuple[str, int, list[str]]:
+    """Pack whole evidence units, then verify the final prompt with the real tokenizer.
+
+    A conservative character-based estimate avoids making a provider token-count
+    API call for every candidate. The final prompt is always checked with the
+    provider's actual tokenizer/count endpoint; units are removed until it fits.
+    """
+    def conservative_estimate(text: str) -> int:
+        return math.ceil(len(text) / 3)
+
     chosen: list[str] = []
     for candidate in candidates:
         trial = "\n\n".join(chosen + [candidate])
-        if counter.count(build_prompt(question, trial)) <= max_prompt_tokens:
+        if conservative_estimate(build_prompt(question, trial)) <= max_prompt_tokens:
             chosen.append(candidate)
-    context = "\n\n".join(chosen)
-    return context, counter.count(build_prompt(question, context)), chosen
+
+    while True:
+        context = "\n\n".join(chosen)
+        actual_tokens = counter.count(build_prompt(question, context))
+        if actual_tokens <= max_prompt_tokens:
+            return context, actual_tokens, chosen
+        if not chosen:
+            raise ValueError(
+                f"Question/instructions alone require {actual_tokens} tokens, "
+                f"exceeding budget {max_prompt_tokens}"
+            )
+        chosen.pop()
 
 
 def make_llm(provider: str | None, model: str | None, config_path: Path) -> LLMInference:
