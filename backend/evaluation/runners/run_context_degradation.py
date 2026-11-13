@@ -257,6 +257,24 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         items = items[:args.limit]
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    history_sizes = args.history_sizes.split(",")
+    arms_per_question = 4
+    planned_generation_calls = len(items) * len(history_sizes) * arms_per_question
+    if planned_generation_calls > args.max_generation_calls:
+        raise ValueError(
+            f"This run requires {planned_generation_calls} generation calls "
+            f"({len(items)} questions x {len(history_sizes)} history size(s) x "
+            f"{arms_per_question} arms), exceeding --max-generation-calls "
+            f"{args.max_generation_calls}. Reduce --limit/--history-sizes or "
+            "raise the cap deliberately."
+        )
+    print(
+        f"Quota guard: at most {planned_generation_calls} generation calls; "
+        f"max output tokens per call: {args.max_output_tokens}; "
+        f"theoretical output-token ceiling: "
+        f"{planned_generation_calls * args.max_output_tokens}."
+    )
+
     llm = make_llm(args.provider, args.model, args.config)
     counter = PromptTokenCounter(llm)
     embedder = EmbeddingGenerator(
@@ -267,7 +285,6 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     )
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     rows: list[dict[str, Any]] = []
-    history_sizes = args.history_sizes.split(",")
     reranker = CrossEncoderReranker(model_name=args.rerank_model)
     if reranker.model is None:
         raise RuntimeError(
@@ -603,20 +620,21 @@ def main() -> None:
     parser.add_argument("--model")
     parser.add_argument("--embedding-model", default="all-MiniLM-L6-v2")
     parser.add_argument("--device", default=None)
-    parser.add_argument("--history-sizes", default="5,10,20,all")
-    parser.add_argument("--max-prompt-tokens", type=int, default=4096)
+    parser.add_argument("--history-sizes", default="5", help="History window(s); default runs only the 5-session window")
+    parser.add_argument("--max-prompt-tokens", type=int, default=2048, help="Small default prompt budget to limit input usage")
     parser.add_argument(
-        "--long-context-max-prompt-tokens", type=int, default=32768,
+        "--long-context-max-prompt-tokens", type=int, default=4096,
         help="Separate larger context budget for the full-history baseline; must fit the reader model."
     )
-    parser.add_argument("--retrieval-k", type=int, default=30)
-    parser.add_argument("--candidate-pool-size", type=int, default=100)
+    parser.add_argument("--retrieval-k", type=int, default=5)
+    parser.add_argument("--candidate-pool-size", type=int, default=20)
     parser.add_argument("--rerank-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     parser.add_argument("--chunk-size", type=int, default=220)
     parser.add_argument("--overlap", type=int, default=30)
-    parser.add_argument("--max-output-tokens", type=int, default=128)
+    parser.add_argument("--max-output-tokens", type=int, default=64, help="Small response cap per generation call")
     parser.add_argument("--temperature", type=float, default=0.0)
-    parser.add_argument("--limit", type=int, default=5, help="Smoke test limit; use 0 for all questions")
+    parser.add_argument("--limit", type=int, default=1, help="Number of questions; default is one")
+    parser.add_argument("--max-generation-calls", type=int, default=4, help="Hard cap on total LLM generation calls; default permits one question across four arms")
     args = parser.parse_args()
     if (
         args.max_prompt_tokens < 128
