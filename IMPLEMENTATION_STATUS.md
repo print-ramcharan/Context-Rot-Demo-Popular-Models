@@ -22,13 +22,20 @@ completed command. Unrun experiments are not represented as results.
 
 ## Implemented in this revision
 
-- Candidate generation is now 100 chunks for BM25, dense, and hybrid
-  retrieval, with 100-item reranking candidate pool.
-- All configurations collapse candidates to unique parent documents and apply
-  a shared 20-parent evaluation depth.
-- B4 reranks one representative chunk per unique parent and returns up to 20
-  parents. The reranker writes its model score into `score`, and the runner
-  preserves that ordering.
+- Dense and hybrid retrieval use a 100-chunk candidate pool. BM25 scans its
+  exact score ranking until it has enough positive-scoring unique parents for
+  the requested evaluation depth, rather than stopping at 100 chunks.
+- All configurations are evaluated at a shared 20-parent depth; any genuine
+  shortfall is reported rather than padded.
+- B4 reranks candidate chunks before parent-document aggregation. It scores
+  title-plus-passage text, then retains the highest cross-encoder-scoring
+  passage for each parent and returns the top 20 unique parents. This avoids
+  discarding alternate passages before the cross-encoder can assess them.
+- B4 now fails explicitly if the cross-encoder failed to load, rather than
+  silently producing an unreranked result under the reranker label.
+- The per-query NDCG implementation uses graded gains and the complete query
+  qrels for its ideal ranking, aligning the CSV metric with standard BEIR
+  NDCG rather than deriving the ideal ranking from retrieved documents.
 - Raw records include candidate, parent-deduplication, filtering,
   requested-depth, returned-count, and shortfall diagnostics.
 - Analysis validates that all four configurations contain the same query IDs
