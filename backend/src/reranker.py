@@ -24,7 +24,10 @@ class CrossEncoderReranker:
         if not candidates or self.model is None:
             return candidates
 
-        pairs = [[query, c.get("text", "")] for c in candidates]
+        pairs = [
+            [query, c.get("rerank_text") or c.get("text", "")]
+            for c in candidates
+        ]
         scores = self.model.predict(pairs)
 
         reranked = []
