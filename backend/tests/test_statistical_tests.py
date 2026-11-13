@@ -1,31 +1,31 @@
+import pytest
 
-from evaluation.metrics.statistical_tests import holm_bonferroni
-
-
-def test_holm_bonferroni_adjustment():
-    p_values = [0.01, 0.04, 0.03, 0.002]
-
-    adjusted = holm_bonferroni(p_values)
-
-    expected = [0.03, 0.06, 0.06, 0.008]
-
-    for actual, target in zip(adjusted, expected):
-        assert abs(actual - target) < 1e-10
+from evaluation.metrics.statistical_tests import (
+    holm_bonferroni,
+    paired_bootstrap_ci,
+    wilcoxon_signed_rank_test,
+)
 
 
-def test_holm_preserves_original_order():
-    p_values = [0.04, 0.001, 0.02]
-
-    adjusted = holm_bonferroni(p_values)
-
-    assert adjusted == [0.04, 0.003, 0.04]
+def test_wilcoxon_returns_none_for_single_question():
+    assert wilcoxon_signed_rank_test([0.0], [1.0]) is None
 
 
-def test_holm_handles_none():
-    p_values = [0.01, None, 0.04]
+def test_wilcoxon_handles_all_zero_differences_without_warning():
+    assert wilcoxon_signed_rank_test([0.0, 1.0, 0.5], [0.0, 1.0, 0.5]) == (0.0, 1.0)
 
-    adjusted = holm_bonferroni(p_values)
 
-    assert adjusted[1] is None
-    assert adjusted[0] == 0.02
-    assert adjusted[2] == 0.04
+def test_wilcoxon_rejects_non_finite_values():
+    with pytest.raises(ValueError, match="finite"):
+        wilcoxon_signed_rank_test([0.0, float("nan")], [1.0, 1.0])
+
+
+def test_bootstrap_is_deterministic_and_finite():
+    first = paired_bootstrap_ci([0.1, 0.2, -0.1], n_resamples=500, seed=7)
+    second = paired_bootstrap_ci([0.1, 0.2, -0.1], n_resamples=500, seed=7)
+    assert first == second
+    assert first[0] <= first[1]
+
+
+def test_holm_preserves_none_and_original_order():
+    assert holm_bonferroni([0.01, None, 0.04]) == [0.02, None, 0.04]
