@@ -95,7 +95,7 @@ the UTC run ID in the generated hypothesis filenames):
 python -m evaluation.analyze_longmemeval_judged \
   --run-dir evaluation/results/context_degradation_main \
   --run-id <RUN_ID> \
-  --history-size all \
+  --history-size 5 \
   --dataset evaluation/data/longmemeval_s_cleaned.json
 ```
 
