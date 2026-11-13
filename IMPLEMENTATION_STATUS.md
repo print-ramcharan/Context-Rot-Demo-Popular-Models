@@ -16,7 +16,9 @@ completed command. Unrun experiments are not represented as results.
 - A complete B1-B4 retrieval run produced 1,200 SciFact and 1,292 NFCorpus
   per-query records.
 - Official BEIR aggregate metrics and paired tests were generated from that
-  run. These are preserved under `backend/evaluation/results/processed/`.
+  historical run. These are preserved under
+  `backend/evaluation/results/processed/` and are explicitly superseded for
+  the corrected B4 depth comparison.
 
 ## Implemented in this revision
 
@@ -25,16 +27,20 @@ completed command. Unrun experiments are not represented as results.
 - All configurations collapse candidates to unique parent documents and apply
   a shared 20-parent evaluation depth.
 - B4 reranks one representative chunk per unique parent and returns up to 20
-  parents.
-- Raw records now include candidate, parent-deduplication, filtering,
+  parents. The reranker writes its model score into `score`, and the runner
+  preserves that ordering.
+- Raw records include candidate, parent-deduplication, filtering,
   requested-depth, returned-count, and shortfall diagnostics.
-- Analysis validates that all four configurations contain the same query IDs.
+- Analysis validates that all four configurations contain the same query IDs
+  and applies Holm-Bonferroni adjustment across the planned paired tests.
 - A timestamped run directory preserves each corrected run and its metadata.
+- A cross-platform memory retrieval harness now exercises the existing
+  ConversationStore and reports Recall@K, MRR, cross-platform Recall@K,
+  retrieval latency percentiles, and local store size.
 
-## Required rerun
+## Required execution
 
-The existing raw run predates the B4 depth fix. It must be treated as
-superseded for Recall@20 and rerun before publication:
+The existing raw BEIR run predates the B4 depth fix. Rerun before publication:
 
 ```bash
 cd backend
@@ -47,10 +53,21 @@ python -m evaluation.report_depth_audit \
   --run-dir evaluation/results/runs/depth_audit_<timestamp>
 ```
 
+Run the cross-platform memory retrieval harness with an independently labelled
+dataset (the checked-in example is only a smoke-test fixture):
+
+```bash
+cd backend
+python -m evaluation.runners.run_memory_benchmark \
+  --input evaluation/datasets/cross_platform_memory.example.jsonl \
+  --output-dir evaluation/results/memory
+```
+
 ## Not completed
 
-No measured results currently exist in this repository for QA benchmarks,
-Gemini answer generation, Longformer, advanced RAG frameworks, context
-degradation, scalability, memory profiling, or security controls beyond the
-existing application tests. Those items must be reported as limitations until
-their experiments are actually run.
+No measured results currently exist for LongMemEval answer quality, Gemini
+answer generation, context-degradation curves, Longformer, advanced RAG
+framework comparisons, RAM profiling, production-scale concurrency, or
+end-to-end security controls. The memory harness is retrieval-only and does
+not establish improved generated answers. These remain limitations until
+their experiments are executed on appropriate datasets and infrastructure.
