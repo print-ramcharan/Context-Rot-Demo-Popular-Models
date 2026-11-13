@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import re
@@ -33,6 +34,14 @@ from evaluation.metrics.statistical_tests import (
     wilcoxon_signed_rank_test,
     holm_bonferroni,
 )
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def normalize_answer(text: str) -> str:
@@ -466,7 +475,12 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "benchmark": "LongMemEval controlled context-degradation",
         "run_id_utc": run_id,
         "dataset": str(args.dataset),
+        "dataset_sha256": sha256_file(args.dataset),
         "n_questions": len(items),
+        "chunk_size_words": args.chunk_size,
+        "chunk_overlap_words": args.overlap,
+        "embedding_model": args.embedding_model,
+        "retrieval_k_unique_sessions": args.retrieval_k,
         "history_sizes": history_sizes,
         "max_prompt_tokens": args.max_prompt_tokens,
         "long_context_max_prompt_tokens": args.long_context_max_prompt_tokens,
@@ -555,6 +569,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     summary["official_evaluator_hypothesis_files"] = hypothesis_paths
     output.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps({k: v for k, v in summary.items() if k != "per_question"}, indent=2))
+    print(f"RUN_ID={run_id}")
     print(f"RESULT_JSON={output}")
     print(f"RESULT_CSV={csv_path}")
     return summary
