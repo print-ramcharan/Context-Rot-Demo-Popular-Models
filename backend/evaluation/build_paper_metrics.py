@@ -92,7 +92,13 @@ def summarize_longmemeval(run: dict[str, Any], judged: dict[str, Any] | None) ->
                 "retrieval_evidence_completeness_at_k"
             ),
             "mean_context_session_coverage": mean("context_session_coverage"),
+            "mean_context_gold_evidence_recall": mean("context_gold_evidence_recall"),
+            "context_gold_evidence_complete_rate": mean("context_gold_evidence_complete"),
             "token_usage": token_usage,
+            "api_cost": {
+                "status": "not_calculated",
+                "reason": "No dated provider pricing schedule is supplied to this analysis run.",
+            },
             "mean_memory_indexing_latency_ms": mean("memory_indexing_latency_ms"),
             "mean_memory_index_size_bytes": mean("memory_index_size_bytes"),
         }
