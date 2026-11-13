@@ -315,19 +315,44 @@ def _run_config_with_depth(
         if config["mode"] != "bm25"
         else 0
     )
+    # Keep chunk-level candidates until after cross-encoder scoring. Collapsing
+    # to one chunk per parent before reranking can discard the most relevant
+    # passage from a document and prevents the cross-encoder from comparing it.
     parent_candidates = _collapse_parent_candidates(candidate_chunks)
-    rerank_candidates = parent_candidates[: int(retrieval_cfg["rerank_candidate_pool"])]
-    if config["rerank"] and reranker is not None:
-        reranked = reranker.rerank(
+    rerank_candidates = candidate_chunks[: int(retrieval_cfg["rerank_candidate_pool"])]
+
+    if config["rerank"]:
+        if reranker is None or getattr(reranker, "model", None) is None:
+            raise RuntimeError(
+                "B4 requires a loaded cross-encoder; refusing to label an "
+                "unreranked result as Hybrid + Reranker."
+            )
+
+        # Score every candidate chunk, then aggregate to parent documents using
+        # the best-scoring passage per parent. Return the requested number of
+        # unique parent documents, not merely the top-N chunks.
+        rerank_inputs = []
+        for candidate in rerank_candidates:
+            item = dict(candidate)
+            metadata = item.get("metadata", {}) or {}
+            title = metadata.get("title") or metadata.get("source")
+            item["rerank_text"] = (
+                f"{title}\\n{item.get('text', '')}" if title else item.get("text", "")
+            )
+            rerank_inputs.append(item)
+
+        reranked_chunks = reranker.rerank(
             query,
-            rerank_candidates,
-            top_n=int(retrieval_cfg["rerank_top_n"]),
+            rerank_inputs,
+            top_n=len(rerank_inputs),
         )
-        final_chunks = reranked
-        after_count = len(reranked)
+        reranked_parents = _collapse_parent_candidates(reranked_chunks)
+        final_chunks = reranked_parents[: int(retrieval_cfg["evaluation_depth"])]
+        after_count = len(reranked_parents)
     else:
         final_chunks = parent_candidates
         after_count = len(parent_candidates)
+
     diagnostics = {
         "candidate_chunk_count": len(candidate_chunks),
         "unique_parent_count_before_reranking": len(parent_candidates),
@@ -346,7 +371,7 @@ def _measure_rerank(
 ) -> float:
     pool = retrieved_chunks[: int(retrieval_cfg["rerank_candidate_pool"])]
     start = time.perf_counter()
-    reranker.rerank(query, pool, top_n=int(retrieval_cfg["rerank_top_n"]))
+    reranker.rerank(query, pool, top_n=len(pool))
     return (time.perf_counter() - start) * 1000.0
 
 
