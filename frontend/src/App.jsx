@@ -210,10 +210,192 @@ function WorkspacePage({
   );
 }
 
+function EvaluationPage() {
+  const [query, setQuery] = useState('');
+  const [expected, setExpected] = useState('');
+  const [sources, setSources] = useState('');
+  const [documents, setDocuments] = useState([]);
+  const [selectedSources, setSelectedSources] = useState([]);
+  const [generate, setGenerate] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/documents`)
+      .then(async response => {
+        if (!response.ok) throw new Error(`Backend returned ${response.status}`);
+        return response.json();
+      })
+      .then(data => {
+        setDocuments(data.documents || []);
+        setSelectedSources((data.documents || []).map(document => document.name));
+      })
+      .catch(() => setError('Cannot reach the backend. Start it with ./run.sh, then refresh this page.'));
+  }, []);
+
+  const toggleSource = (name) => {
+    setSelectedSources(current => current.includes(name)
+      ? current.filter(source => source !== name)
+      : [...current, name]);
+  };
+
+  const runEvaluation = async (event) => {
+    event.preventDefault();
+    if (!query.trim()) return setError('Enter an evaluation query.');
+    setRunning(true);
+    setError('');
+    try {
+      const response = await fetch(`${API_BASE}/evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          top_k: 5,
+          cases: [{
+            query,
+            expected_answer: expected,
+            relevant_sources: selectedSources.length
+              ? selectedSources
+              : sources.split(',').map(value => value.trim()).filter(Boolean),
+            generate_answer: generate
+          }]
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Evaluation failed');
+      setResult(data);
+    } catch (evaluationError) {
+      setError(evaluationError.message === 'Failed to fetch'
+        ? 'Cannot reach the backend. Start it with ./run.sh, then refresh this page.'
+        : evaluationError.message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const metricRows = result ? [
+    ['Retrieval', 'Hit rate', result.cases[0].retrieval.hit_rate_at_k ?? result.cases[0].retrieval.hit_rate, 'Score'],
+    ['Retrieval', 'Precision@k', result.cases[0].retrieval.precision_at_k, 'Score'],
+    ['Retrieval', 'Recall@k', result.cases[0].retrieval.recall_at_k, 'Score'],
+    ['Retrieval', 'MRR', result.cases[0].retrieval.mrr_at_k ?? result.cases[0].retrieval.mrr, 'Score'],
+    ['Retrieval', 'nDCG@k', result.cases[0].retrieval.ndcg_at_k ?? result.cases[0].retrieval.ndcg, 'Score'],
+    ['Context', 'Context precision', result.cases[0].context.context_precision, 'Score'],
+    ['Context', 'Context recall', result.cases[0].context.context_recall, 'Score'],
+    ['Answer', 'Faithfulness proxy', result.cases[0].answer?.faithfulness_proxy, 'Score'],
+    ['Answer', 'Answer token recall', result.cases[0].answer?.answer_token_recall, 'Score'],
+    ['System', 'Retrieval latency', result.cases[0].system.retrieval_ms, 'ms'],
+    ['System', 'Generation latency', result.cases[0].system.generation_ms, 'ms'],
+    ['System', 'Total latency', result.cases[0].system.total_ms, 'ms'],
+    ['System', 'Generation status', result.cases[0].generation?.status || 'unknown', 'status']
+  ] : [];
+
+  const formatMetric = (value, unit) => {
+    if (value == null) return '—';
+    if (typeof value !== 'number') return value;
+    return `${value.toFixed(unit === 'ms' ? 2 : 3)}${unit === 'ms' ? ' ms' : ''}`;
+  };
+
+  const summaryRows = result ? Object.entries(result.summary.metrics || {}).map(([name, stats]) => [
+    name.replaceAll('_', ' '),
+    stats.mean,
+    stats.std_dev,
+    stats.ci95_low,
+    stats.ci95_high,
+  ]) : [];
+
+  return (
+    <div className="workspace-container animate-reveal">
+      <div className="workspace-header">
+        <div>
+          <h1 className="workspace-title font-heading">RAG Evaluation</h1>
+          <p style={{ color: 'var(--text-secondary)' }}>
+            Test each pipeline stage with grounded, reproducible metrics.
+          </p>
+        </div>
+        <a className="btn-secondary" href={`${API_BASE}/docs`} target="_blank" rel="noreferrer">API docs</a>
+      </div>
+      <div className="premium-card">
+        <form onSubmit={runEvaluation} style={{ display: 'grid', gap: '16px' }}>
+          <label>Query<input className="eval-input" value={query} onChange={event => setQuery(event.target.value)} placeholder="What should retrieval find?" /></label>
+          <label>Expected answer (optional)<textarea className="eval-input" value={expected} onChange={event => setExpected(event.target.value)} rows="3" /></label>
+          <div>
+            <label>Relevant indexed documents</label>
+            {documents.length ? (
+              <div className="document-picker">
+                {documents.map(document => (
+                  <label className="document-option" key={document.name}>
+                    <input type="checkbox" checked={selectedSources.includes(document.name)} onChange={() => toggleSource(document.name)} />
+                    <span>{document.name}</span>
+                    <small>{document.chunks} chunks</small>
+                  </label>
+                ))}
+              </div>
+            ) : <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No indexed documents. Upload one in Workspace first.</p>}
+            <label style={{ display: 'block', marginTop: '10px' }}>Or enter source filenames manually
+              <input className="eval-input" value={sources} onChange={event => setSources(event.target.value)} placeholder="alice-in-wonderland.txt" />
+            </label>
+          </div>
+          <label style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><input type="checkbox" checked={generate} onChange={event => setGenerate(event.target.checked)} /> Generate an answer and calculate answer metrics <span style={{ color: 'var(--text-muted)' }}>(uses OpenRouter credits)</span></label>
+          <button className="btn-primary" disabled={running}>{running ? 'Running…' : 'Run evaluation'}</button>
+        </form>
+        {error && <p style={{ color: '#ef4444' }}>{error}</p>}
+      </div>
+      {result && <div className="premium-card">
+        <h3 className="font-heading">Metrics</h3>
+        <div className="metrics-table-wrap">
+          {result.cases[0].generation?.status !== 'completed' && (
+            <p className="evaluation-notice">
+              Answer metrics are unavailable because generation is {result.cases[0].generation?.status || 'unknown'}.
+              Enable answer generation and ensure the OpenRouter key has sufficient credits.
+              {result.cases[0].generation?.error && ` ${result.cases[0].generation.error}`}
+            </p>
+          )}
+          <table className="metrics-table">
+            <thead>
+              <tr><th>Stage</th><th>Metric</th><th>Value</th><th>Unit</th></tr>
+            </thead>
+            <tbody>
+              {metricRows.map(([stage, name, value, unit]) => (
+                <tr key={name}>
+                  <td><span className={`metric-stage metric-stage-${stage.toLowerCase()}`}>{stage}</span></td>
+                  <td>{name}</td>
+                  <td className="metric-value">{formatMetric(value, unit)}</td>
+                  <td>{unit === 'Score' ? '0–1' : unit}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {summaryRows.length > 0 && <div className="metrics-table-wrap">
+          <h4 className="metrics-subheading">Aggregate statistics</h4>
+          <table className="metrics-table">
+            <thead>
+              <tr><th>Metric</th><th>Mean</th><th>Std. dev.</th><th>95% CI low</th><th>95% CI high</th></tr>
+            </thead>
+            <tbody>
+              {summaryRows.map(([name, mean, standardDeviation, low, high]) => (
+                <tr key={name}>
+                  <td>{name}</td>
+                  <td className="metric-value">{formatMetric(mean, 'Score')}</td>
+                  <td className="metric-value">{formatMetric(standardDeviation, 'Score')}</td>
+                  <td className="metric-value">{formatMetric(low, 'Score')}</td>
+                  <td className="metric-value">{formatMetric(high, 'Score')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>}
+        <details style={{ marginTop: '24px' }}><summary>Raw evaluation payload</summary><pre style={{ overflow: 'auto' }}>{JSON.stringify(result, null, 2)}</pre></details>
+      </div>}
+      <Footer />
+    </div>
+  );
+}
+
 function getRouteFromHash() {
   if (typeof window === 'undefined') return 'home';
   const rawHash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
-  return rawHash === 'app' ? 'app' : 'home';
+  return rawHash === 'app' || rawHash === 'evaluate' ? rawHash : 'home';
 }
 
 export default function App() {
@@ -395,6 +577,8 @@ export default function App() {
             onQuery={handleQuery}
             sessionStats={calculateStats()}
           />
+        ) : route === 'evaluate' ? (
+          <EvaluationPage />
         ) : (
           <HomePage onEnterApp={() => navigate('app')} />
         )}

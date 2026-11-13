@@ -530,3 +530,152 @@ h1, h2, h3, h4, .font-heading {
   }
 }
 
+.eval-input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.eval-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.eval-grid .stat-item {
+  min-width: 0;
+  text-align: center;
+}
+
+.eval-grid .stat-value {
+  overflow-wrap: anywhere;
+  font-size: clamp(18px, 2.4vw, 28px);
+}
+
+.document-picker {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.document-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.document-option small {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.metrics-table-wrap {
+  overflow-x: auto;
+  margin-top: 20px;
+}
+
+.metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.metrics-table th,
+.metrics-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.metrics-table th {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.metrics-table th:nth-child(1),
+.metrics-table td:nth-child(1) {
+  width: 18%;
+}
+
+.metrics-table th:nth-child(2),
+.metrics-table td:nth-child(2) {
+  width: 42%;
+}
+
+.metrics-table th:nth-child(3),
+.metrics-table td:nth-child(3) {
+  width: 25%;
+}
+
+.metrics-table th:nth-child(4),
+.metrics-table td:nth-child(4) {
+  width: 15%;
+}
+
+.metrics-table .metric-value {
+  color: var(--purple-400);
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.metrics-subheading {
+  margin: 28px 0 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.evaluation-notice {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.metric-stage {
+  display: inline-block;
+  min-width: 76px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.metric-stage-retrieval {
+  background: rgba(139, 92, 246, 0.18);
+}
+
+.metric-stage-context {
+  background: rgba(16, 185, 129, 0.18);
+}
+
+.metric-stage-answer {
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.metric-stage-system {
+  background: rgba(245, 158, 11, 0.18);
+}

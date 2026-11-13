@@ -35,10 +35,10 @@ export default function Header({ page = 'home' }) {
         </a>
 
         <nav style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
-          <a 
-            href="#/home" 
-            style={{ 
-              textDecoration: 'none', 
+          <a
+            href="#/home"
+            style={{
+              textDecoration: 'none',
               color: page === 'home' ? 'var(--text-primary)' : 'var(--text-secondary)',
               fontWeight: '600',
               fontSize: '14px',
@@ -47,10 +47,10 @@ export default function Header({ page = 'home' }) {
           >
             Home
           </a>
-          <a 
-            href="#/app" 
-            style={{ 
-              textDecoration: 'none', 
+          <a
+            href="#/app"
+            style={{
+              textDecoration: 'none',
               color: page === 'app' ? 'var(--text-primary)' : 'var(--text-secondary)',
               fontWeight: '600',
               fontSize: '14px',
@@ -58,6 +58,18 @@ export default function Header({ page = 'home' }) {
             }}
           >
             Workspace
+          </a>
+          <a
+            href="#/evaluate"
+            style={{
+              textDecoration: 'none',
+              color: page === 'evaluate' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              fontWeight: '600',
+              fontSize: '14px',
+              transition: 'color 0.2s'
+            }}
+          >
+            Evaluate
           </a>
         </nav>
 
@@ -67,10 +79,10 @@ export default function Header({ page = 'home' }) {
           </a>
           <button
             onClick={toggleTheme}
-            style={{ 
-              background: 'none', 
-              border: 'none', 
-              color: 'var(--text-secondary)', 
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-secondary)',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center'

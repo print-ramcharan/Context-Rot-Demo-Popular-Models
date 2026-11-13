@@ -9,7 +9,14 @@ from src.embedding import EmbeddingGenerator
 from src.chunking import TextChunker
 from src.context_assembly import ContextAssembler
 from src.reranker import CrossEncoderReranker
-from src.utils.metrics import MetricsCollector
+from src.utils.metrics import (
+    MetricsCollector,
+    advanced_ranking_metrics,
+    context_quality_metrics,
+    rank_metrics,
+    summarize_metric,
+    text_metrics,
+)
 import os
 import shutil
 import json
@@ -17,7 +24,7 @@ import time
 import logging
 import yaml
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Any
 from conversation_store import ConversationStore
 from dotenv import load_dotenv
 
@@ -66,6 +73,22 @@ class RetrieveContextRequest(BaseModel):
     platform_filter: Optional[str] = None
     similarity_threshold: float = 0.0
 
+class EvaluationCase(BaseModel):
+    query: str
+    expected_answer: str = ""
+    relevant_sources: List[str] = []
+    generate_answer: bool = False
+    context_budget_tokens: Optional[int] = None
+    unanswerable: bool = False
+    context_variant: Optional[str] = None
+    evidence_position: Optional[str] = None
+    distractor_count: int = 0
+    context_length_tokens: Optional[int] = None
+
+class EvaluationRequest(BaseModel):
+    cases: List[EvaluationCase]
+    top_k: int = 5
+
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -76,8 +99,11 @@ def load_config(path: str = "config.yaml") -> dict:
 
 config = load_config()
 llm_cfg = config.get('llm', {})
-gemini_cfg = llm_cfg.get('gemini', {})
-gemini_with_cache_cfg = {**gemini_cfg, "semantic_cache": llm_cfg.get("semantic_cache", {})}
+openrouter_cfg = llm_cfg.get('openrouter', {})
+openrouter_with_cache_cfg = {
+    **openrouter_cfg,
+    "semantic_cache": llm_cfg.get("semantic_cache", {}),
+}
 chunk_cfg = config.get('chunking', {})
 embedding_cfg = config.get('embedding', {})
 retrieval_cfg = config.get('retrieval', {})
@@ -87,6 +113,58 @@ context_cfg = config.get('context', {})
 metrics = MetricsCollector()
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
+
+METRIC_CATALOG = {
+    "retrieval": [
+        "precision_at_k", "recall_at_k", "hit_rate_at_k", "mrr_at_k",
+        "average_precision_at_k", "map_at_k", "ndcg_at_k",
+        "unique_document_coverage",
+    ],
+    "hybrid_and_reranking": [
+        "absolute_recall_improvement", "relative_recall_improvement",
+        "ndcg_improvement", "reranking_gain", "evidence_loss",
+        "candidate_utilization",
+    ],
+    "context": [
+        "context_precision", "context_recall", "evidence_retention",
+        "evidence_loss_rate", "token_reduction", "compression_ratio",
+        "evidence_density_before", "evidence_density_after",
+        "evidence_density_gain", "budget_utilization",
+        "context_preservation_score",
+    ],
+    "answer": [
+        "exact_match", "answer_token_precision", "answer_token_recall",
+        "answer_token_f1", "semantic_answer_similarity",
+        "faithfulness", "hallucination_rate", "citation_precision",
+        "citation_recall", "citation_f1", "answer_completeness",
+        "abstention_accuracy", "answer_accuracy",
+    ],
+    "context_degradation": [
+        "accuracy_at_context_length", "context_degradation",
+        "context_degradation_rate", "robustness_score",
+        "position_sensitivity", "distractor_sensitivity",
+        "noise_robustness", "context_utilization",
+        "mitigation_gain", "context_accuracy_auc",
+    ],
+    "external_memory": [
+        "memory_precision", "memory_recall", "memory_f1",
+        "retention_accuracy", "update_accuracy", "staleness_rate",
+        "conflict_rate", "memory_consistency", "memory_token_efficiency",
+        "memory_gain",
+    ],
+    "system": [
+        "ingestion_ms", "retrieval_ms", "reranking_ms", "compaction_ms",
+        "generation_ms", "end_to_end_ms", "mean_latency", "median_latency",
+        "p95_latency", "p99_latency", "throughput", "failure_rate",
+        "input_tokens", "context_tokens", "output_tokens", "total_tokens",
+        "token_savings", "cost_per_query", "cost_reduction",
+    ],
+    "statistical_reliability": [
+        "sample_size", "standard_deviation", "standard_error",
+        "confidence_interval_95", "paired_improvement",
+        "paired_t_test", "wilcoxon_signed_rank", "effect_size",
+    ],
+}
 
 # ── AI Components Initialization ──────────────────────────────────────────────
 
@@ -139,18 +217,18 @@ assembler = ContextAssembler(
 )
 
 # Use flash-lite for demo: weaker with large context, generous free-tier RPM
-STABLE_MODEL = "models/gemini-2.5-flash-lite"
+STABLE_MODEL = openrouter_cfg.get("model", "openai/gpt-4o-mini")
 
 llm_standard = LLMInference(
-    provider="gemini",
+    provider="openrouter",
     model=STABLE_MODEL,
-    config=gemini_with_cache_cfg
+    config=openrouter_with_cache_cfg
 )
 
 llm_rag = LLMInference(
-    provider="gemini",
+    provider="openrouter",
     model=STABLE_MODEL,
-    config=gemini_with_cache_cfg
+    config=openrouter_with_cache_cfg
 )
 
 INDEX_PATH = storage_cfg.get('index_path', "memory_index")
@@ -192,6 +270,185 @@ Answer:"""
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "timestamp": time.time()}
+
+@app.get("/metrics")
+def get_metrics():
+    """Return online pipeline telemetry and the metric definitions used by evaluation."""
+    return {
+        "status": "success",
+        "runtime": metrics.snapshot(),
+        "index": {
+            "documents": store.index.ntotal if store.index else 0,
+            "embedding_dimension": gen.get_embedding_dimension(),
+            "retrieval_mode": retrieval_cfg.get("mode", "hybrid"),
+            "reranking_enabled": retrieval_cfg.get("rerank_enabled", False),
+        },
+        "available_metrics": METRIC_CATALOG,
+    }
+
+@app.get("/metrics/catalog")
+def metrics_catalog():
+    """Describe the evaluation scorecard and which metrics need ground truth."""
+    return {"status": "success", "categories": METRIC_CATALOG}
+
+@app.get("/documents")
+def list_indexed_documents():
+    """List the source files currently represented in the active vector index."""
+    sources = sorted({
+        str(metadata.get("source"))
+        for metadata in store.metadata
+        if metadata.get("source")
+    })
+    return {
+        "status": "success",
+        "documents": [
+            {
+                "name": source,
+                "chunks": sum(
+                    1 for metadata in store.metadata
+                    if metadata.get("source") == source
+                ),
+            }
+            for source in sources
+        ],
+        "total": len(sources),
+    }
+
+@app.post("/evaluate")
+def evaluate(request: EvaluationRequest):
+    """Run reproducible retrieval/evaluation cases against the current index."""
+    if not request.cases:
+        raise HTTPException(status_code=400, detail="At least one evaluation case is required")
+
+    results: list[dict[str, Any]] = []
+    for case in request.cases:
+        if not case.query.strip():
+            raise HTTPException(status_code=400, detail="Evaluation queries cannot be empty")
+        started = time.perf_counter()
+        retrieval_started = time.perf_counter()
+        retrieved = retriever.retrieve(case.query, k=request.top_k)
+        retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
+        relevant = set(case.relevant_sources)
+        ranking = advanced_ranking_metrics(retrieved, relevant, request.top_k)
+        compacted = assembler.compress_context(
+            case.query,
+            retrieved,
+            max_context_chars=context_cfg.get("max_context_chars", 6000),
+            max_sentences=context_cfg.get("max_sentences", 8),
+            max_chunks_after_compaction=context_cfg.get("max_chunks", 10),
+        )
+        context = "\n\n".join(item.get("text", "") for item in compacted)
+        retrieved_sources = {
+            str(item.get("source") or item.get("metadata", {}).get("source", ""))
+            for item in retrieved
+        } - {""}
+        context_metrics = context_quality_metrics(
+            retrieved,
+            compacted,
+            relevant,
+            case.context_budget_tokens,
+        )
+        context_metrics.update({
+            "chunks_before": len(retrieved),
+            "chunks_after": len(compacted),
+        })
+        answer = ""
+        generation_ms = 0.0
+        tokens = {}
+        generation_status = "skipped"
+        generation_error = None
+        if case.generate_answer:
+            generation_started = time.perf_counter()
+            try:
+                generated = llm_rag.generate(
+                    format_rag_prompt(case.query, context),
+                    max_tokens=768,
+                )
+            except Exception as exc:
+                logger.exception("Evaluation answer generation failed")
+                message = str(exc)
+                if "402" in message or "credits" in message.lower():
+                    message = (
+                        "OpenRouter credits are insufficient for answer generation. "
+                        "The request was reduced to 768 output tokens; add credits "
+                        "or disable answer generation to run retrieval metrics."
+                    )
+                generation_status = "failed"
+                generation_error = message
+            else:
+                generation_ms = (time.perf_counter() - generation_started) * 1000
+                answer = generated.get("response", "")
+                tokens = generated.get("tokens_used", {})
+                generation_status = "completed"
+        result = {
+            "query": case.query,
+            "retrieved_sources": sorted(retrieved_sources),
+            "retrieval": ranking,
+            "context": context_metrics,
+            "answer": (
+                text_metrics(answer, case.expected_answer, context)
+                if case.expected_answer and generation_status == "completed" else None
+            ),
+            "generation": {
+                "status": generation_status,
+                "error": generation_error,
+                "answer_length": len(answer),
+            },
+            "experiment": {
+                "context_variant": case.context_variant,
+                "evidence_position": case.evidence_position,
+                "distractor_count": case.distractor_count,
+                "context_length_tokens": case.context_length_tokens,
+                "unanswerable": case.unanswerable,
+            },
+            "system": {
+                "retrieval_ms": retrieval_ms,
+                "generation_ms": generation_ms,
+                "total_ms": (time.perf_counter() - started) * 1000,
+                "prompt_tokens": tokens.get("prompt", 0),
+                "completion_tokens": tokens.get("completion", 0),
+                "cache_hit": bool(generated.get("cache_hit", False))
+                if case.generate_answer else False,
+            },
+        }
+        metrics.increment("evaluation_cases")
+        metrics.observe("evaluation_retrieval_ms", retrieval_ms)
+        results.append(result)
+
+    metric_names = (
+        ("precision_at_k", "precision_at_k"),
+        ("recall_at_k", "recall_at_k"),
+        ("hit_rate_at_k", "hit_rate_at_k"),
+        ("mrr_at_k", "mrr_at_k"),
+        ("average_precision_at_k", "map_at_k"),
+        ("ndcg_at_k", "ndcg_at_k"),
+        ("evidence_retention", "evidence_retention"),
+        ("token_reduction", "token_reduction"),
+        ("answer_token_f1", "answer_token_f1"),
+        ("faithfulness_proxy", "faithfulness_proxy"),
+    )
+    summary_metrics = {}
+    for source_name, output_name in metric_names:
+        values = []
+        for result in results:
+            source = result["retrieval"] if source_name in result["retrieval"] else (
+                result["context"] if source_name in result["context"]
+                else result.get("answer") or {}
+            )
+            value = source.get(source_name)
+            if value is not None:
+                values.append(value)
+        summary_metrics[output_name] = summarize_metric(values)
+    latency_values = [result["system"]["total_ms"] for result in results]
+    return {
+        "status": "success",
+        "cases": results,
+        "summary": {
+            "case_count": len(results),
+            "metrics": summary_metrics,
+            "latency": summarize_metric(latency_values),
+        },
+    }
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_file(

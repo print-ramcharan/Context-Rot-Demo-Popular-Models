@@ -117,6 +117,7 @@ class LLMInference:
             "huggingface": "mistralai/Mistral-7B-Instruct-v0.2",
             "anthropic": "claude-3-sonnet-20240229",
             "openai": "gpt-4-turbo",
+            "openrouter": "openai/gpt-4o-mini",
             "gemini": "gemini-3.5-flash-lite"
         }
         return defaults.get(self.provider, "llama2")
@@ -131,6 +132,8 @@ class LLMInference:
             self._init_anthropic()
         elif self.provider == "openai":
             self._init_openai()
+        elif self.provider == "openrouter":
+            self._init_openrouter()
         elif self.provider == "gemini":
             self._init_gemini()
         else:
@@ -198,11 +201,40 @@ class LLMInference:
             self.client = OpenAI(api_key=api_key)
         except ImportError:
             raise RuntimeError("Install with: pip install openai")
+
+    def _init_openrouter(self):
+        """Initialize OpenRouter through its OpenAI-compatible API."""
+        from pathlib import Path
+
+        try:
+            from openai import OpenAI
+            env_path = Path(__file__).resolve().parents[1] / ".env"
+            load_dotenv(env_path, override=False)
+            api_key = self.config.get('api_key') or os.getenv('OPENROUTER_API_KEY')
+            if not api_key or api_key == "your_openrouter_key_here":
+                raise RuntimeError(
+                    "OPENROUTER_API_KEY is missing. Add it to backend/.env."
+                )
+            self.client = OpenAI(
+                api_key=api_key.strip(),
+                base_url=self.config.get(
+                    'base_url', 'https://openrouter.ai/api/v1'
+                ),
+                default_headers={
+                    "HTTP-Referer": self.config.get(
+                        'http_referer', 'http://localhost:5173'
+                    ),
+                    "X-Title": self.config.get(
+                        'app_name', 'Context Rot Lab'
+                    ),
+                },
+            )
+        except ImportError:
+            raise RuntimeError("Install with: pip install openai")
             
     def _init_gemini(self):
         """Initialize Gemini using the backend .env file."""
         from pathlib import Path
-        from google import genai
 
         env_path = Path(__file__).resolve().parents[1] / ".env"
         load_dotenv(env_path, override=False)
@@ -213,10 +245,17 @@ class LLMInference:
                 f"GEMINI_API_KEY not found in {env_path}"
             )
 
-        self.model = "gemini-3.5-flash-lite"
+        try:
+            from google import genai
+        except ImportError as exc:
+            raise RuntimeError(
+                "Gemini support requires the google-genai package. "
+                "Install backend requirements with: pip install -r requirements.txt"
+            ) from exc
+
         self.client = genai.Client(api_key=api_key.strip())
 
-    def generate(self, prompt: str, max_tokens: int = 1000, 
+    def generate(self, prompt: str, max_tokens: int = 768,
                  temperature: float = 0.7) -> Dict[str, Any]:
         """
         Generate response from LLM.
@@ -238,7 +277,7 @@ class LLMInference:
             result = self._generate_huggingface(prompt, max_tokens, temperature)
         elif self.provider == "anthropic":
             result = self._generate_anthropic(prompt, max_tokens, temperature)
-        elif self.provider == "openai":
+        elif self.provider in {"openai", "openrouter"}:
             result = self._generate_openai(prompt, max_tokens, temperature)
         elif self.provider == "gemini":
             result = self._generate_gemini(prompt, max_tokens, temperature)
@@ -357,7 +396,7 @@ class LLMInference:
         from google.genai import types
 
         response = self.client.models.generate_content(
-            model="gemini-3.5-flash-lite",
+            model=self.model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 max_output_tokens=max_tokens,
@@ -374,7 +413,7 @@ class LLMInference:
 
         return {
             "response": text.strip(),
-            "model": "gemini-3.5-flash-lite",
+            "model": self.model,
             "tokens_used": {
                 "prompt": usage.prompt_token_count if usage else 0,
                 "completion": usage.candidates_token_count if usage else 0,
@@ -382,7 +421,7 @@ class LLMInference:
             },
         }
 
-    async def stream_generate(self, prompt: str, max_tokens: int = 1000, 
+    async def stream_generate(self, prompt: str, max_tokens: int = 768,
                         temperature: float = 0.7):
         """
         Asynchronous generator yielding response chunks from LLM.

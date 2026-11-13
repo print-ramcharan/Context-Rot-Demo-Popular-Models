@@ -4,7 +4,7 @@
 #
 #   1. Creates & activates the Python venv (backend)
 #   2. Installs Python + Node dependencies (only if missing)
-#   3. Makes sure a Gemini API key is configured
+#   3. Makes sure an OpenRouter API key is configured
 #   4. Starts the backend (FastAPI) AND frontend (Vite) together
 #
 # Usage:
@@ -45,22 +45,22 @@ echo "=============================================="
 echo "  Context Rot Demo  —  one-click launcher"
 echo "=============================================="
 
-# --- 1. Ensure Gemini API key -------------------------------------------
+# --- 1. Ensure OpenRouter API key ---------------------------------------
 echo ""
-echo ">> [1/4] Checking Gemini API key..."
-if [ ! -f "$ENV_FILE" ] || ! grep -q "^GEMINI_API_KEY=.\+" "$ENV_FILE" 2>/dev/null; then
-  echo "    No Gemini API key found (needed by the LLM)."
-  read -r -p "    Paste your Gemini API key (or press Enter to skip): " KEY
+echo ">> [1/4] Checking OpenRouter API key..."
+if [ ! -f "$ENV_FILE" ] || ! grep -q "^OPENROUTER_API_KEY=.\+" "$ENV_FILE" 2>/dev/null || grep -q "^OPENROUTER_API_KEY=your_openrouter_key_here$" "$ENV_FILE" 2>/dev/null; then
+  echo "    No OpenRouter API key found (needed by the LLM)."
+  read -r -p "    Paste your OpenRouter API key (or press Enter to skip): " KEY
   if [ -n "$KEY" ]; then
     mkdir -p "$(dirname "$ENV_FILE")"
     # Preserve an existing file; just add/replace the key line
-    [ -f "$ENV_FILE" ] && sed -i '' '/^GEMINI_API_KEY=/d' "$ENV_FILE"
-    echo "GEMINI_API_KEY=$KEY" >> "$ENV_FILE"
+    [ -f "$ENV_FILE" ] && sed -i '' '/^OPENROUTER_API_KEY=/d' "$ENV_FILE"
+    echo "OPENROUTER_API_KEY=$KEY" >> "$ENV_FILE"
     chmod 600 "$ENV_FILE"
-    echo "    Saved GEMINI_API_KEY to $ENV_FILE"
+    echo "    Saved OPENROUTER_API_KEY to $ENV_FILE"
   else
-    echo "    !! Skipped. Queries will fail until you set GEMINI_API_KEY in $ENV_FILE"
-    echo "       Get a free key: https://aistudio.google.com/app/apikey"
+    echo "    !! Skipped. Queries will fail until you set OPENROUTER_API_KEY in $ENV_FILE"
+    echo "       Get a key: https://openrouter.ai/keys"
   fi
 else
   echo "    Key already configured in $ENV_FILE"
