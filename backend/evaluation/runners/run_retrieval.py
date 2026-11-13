@@ -226,7 +226,10 @@ def run_dataset(
                 retrieved_chunks, qrels, qid, int(cfg["evaluation_depth"]), include_diagnostics=True
             )
             total_relevant = int(sum(grade > 0 for grade in qrels.get(qid, {}).values()))
-            metrics = compute_query_metrics(grades, total_relevant)
+            all_relevant_grades = list(qrels.get(qid, {}).values())
+            metrics = compute_query_metrics(
+                grades, total_relevant, all_relevant_grades=all_relevant_grades
+            )
 
             rerank_ms = 0.0
             if config["rerank"] and reranker is not None:
