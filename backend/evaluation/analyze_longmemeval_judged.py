@@ -92,7 +92,11 @@ def main() -> None:
                 "n": len(cats),
                 "accuracy": statistics.mean(cats) if cats else None,
             }
-        abstention_ids = [qid for qid in expected if "_abs" in qid]
+        abstention_ids = [
+            qid for qid, row in expected.items()
+            if "abstention" in str(row.get("question_type", "")).lower()
+            or "_abs" in qid.lower()
+        ]
         abstention_values = [judged[arm][qid]["correct"] for qid in abstention_ids]
         summary["arms"][arm] = {
             "correct": sum(values),
