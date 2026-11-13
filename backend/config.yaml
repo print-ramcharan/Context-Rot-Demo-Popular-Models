@@ -60,7 +60,7 @@ llm:
   
   # For Gemini (requires API key)
   gemini:
-    model: "gemini-2.5-flash"
+    model: "gemini-3.5-flash-lite"
     api_key: ""  # Read from GEMINI_API_KEY in .env
   
   # Common parameters
