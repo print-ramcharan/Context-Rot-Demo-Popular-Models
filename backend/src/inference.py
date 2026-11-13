@@ -117,7 +117,7 @@ class LLMInference:
             "huggingface": "mistralai/Mistral-7B-Instruct-v0.2",
             "anthropic": "claude-3-sonnet-20240229",
             "openai": "gpt-4-turbo",
-            "gemini": "gemini-1.5-flash"
+            "gemini": "gemini-3.5-flash-lite"
         }
         return defaults.get(self.provider, "llama2")
     
@@ -213,7 +213,7 @@ class LLMInference:
                 f"GEMINI_API_KEY not found in {env_path}"
             )
 
-        self.model = "gemini-1.5-flash"
+        self.model = "gemini-3.5-flash-lite"
         self.client = genai.Client(api_key=api_key.strip())
 
     def generate(self, prompt: str, max_tokens: int = 1000, 
@@ -357,7 +357,7 @@ class LLMInference:
         from google.genai import types
 
         response = self.client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-3.5-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
                 max_output_tokens=max_tokens,
@@ -374,7 +374,7 @@ class LLMInference:
 
         return {
             "response": text.strip(),
-            "model": "gemini-1.5-flash",
+            "model": "gemini-3.5-flash-lite",
             "tokens_used": {
                 "prompt": usage.prompt_token_count if usage else 0,
                 "completion": usage.candidates_token_count if usage else 0,
