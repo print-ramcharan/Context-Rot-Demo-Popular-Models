@@ -85,21 +85,33 @@ def _bm25_chunks(
     k: int,
 ) -> List[Dict[str, Any]]:
     scores = bm25_index.score(query)
-    top_n = min(int(cfg["bm25_k"]), k, len(scores))
-    ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_n]
+    ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
     results = []
-    for rank, idx in enumerate(ranked):
+    seen_parents = set()
+
+    # Chunk-level top-k can be dominated by several chunks from the same
+    # document. Continue down the exact BM25 ranking until the requested
+    # number of unique parent documents is available (or positive-score
+    # candidates are exhausted).
+    for idx in ranked:
+        if scores[idx] <= 0:
+            break
+        metadata = source_chunks[idx].get("metadata", {})
+        parent_id = metadata.get("parent_id") or metadata.get("doc_id") or idx
+        seen_parents.add(str(parent_id))
         results.append(
             {
                 "text": bm25_index.texts[idx],
                 "score": float(scores[idx]),
-                "rank": rank,
+                "rank": len(results),
                 "metadata": {
-                    **source_chunks[idx].get("metadata", {}),
+                    **metadata,
                     "source": "bm25",
                 },
             }
         )
+        if len(seen_parents) >= int(cfg.get("evaluation_depth", k)):
+            break
     return results
 
 
