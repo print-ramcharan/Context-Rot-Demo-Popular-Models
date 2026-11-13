@@ -215,12 +215,16 @@ def make_llm(provider: str | None, model: str | None, config_path: Path) -> LLMI
 def select_history(
     sessions: list[list[dict[str, Any]]],
     session_ids: list[str],
+    session_dates: list[str],
     size: str,
-) -> list[tuple[str, list[dict[str, Any]]]]:
-    if len(sessions) != len(session_ids):
-        raise ValueError("haystack_sessions and haystack_session_ids length mismatch")
+) -> list[tuple[str, str, list[dict[str, Any]], int]]:
+    if not (len(sessions) == len(session_ids) == len(session_dates)):
+        raise ValueError("haystack_sessions, haystack_session_ids, and haystack_dates must align")
     count = len(sessions) if size == "all" else min(int(size), len(sessions))
-    return [(str(sid), session) for sid, session in zip(session_ids, sessions)][-count:]
+    return [
+        (str(sid), str(date), session, index)
+        for index, (sid, date, session) in enumerate(zip(session_ids, session_dates, sessions))
+    ][-count:]
 
 
 def evaluate(args: argparse.Namespace) -> dict[str, Any]:
@@ -256,30 +260,42 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         answer = str(item.get("answer", ""))
         sessions = item.get("haystack_sessions", [])
         session_ids = list(map(str, item.get("haystack_session_ids", [])))
+        session_dates = list(map(str, item.get("haystack_dates", [])))
 
         for history_size in history_sizes:
-            selected = select_history(sessions, session_ids, history_size)
+            selected = select_history(sessions, session_ids, session_dates, history_size)
+            source_session_by_memory_id = {
+                f"{sid}__occ{index}": sid for sid, _, _, index in selected
+            }
+            date_by_memory_id = {
+                f"{sid}__occ{index}": date for sid, date, _, index in selected
+            }
             store_path = (
                 args.output_dir / "stores" / run_id /
                 f"{item_index:04d}_{re.sub(r'[^A-Za-z0-9_-]', '_', qid)}_{history_size}"
             )
             store = ConversationStore(str(store_path))
-            for sid, session in selected:
+            for sid, session_date, session, session_index in selected:
+                memory_id = f"{sid}__occ{session_index}"
                 text = session_to_text(session)
                 if text:
                     store.store_conversation(
                         platform="longmemeval",
-                        session_id=sid,
-                        prompt=f"LongMemEval session {sid}",
-                        response=text,
+                        session_id=memory_id,
+                        prompt=f"LongMemEval session {sid}; date {session_date}",
+                        response=f"[session_date:{session_date}]\\n{text}",
                         embedding_generator=embedder,
                         chunk_size=args.chunk_size,
                         overlap=args.overlap,
                     )
 
             recent_units = [
-                f"[session_id:{sid}]\n{session_to_text(session)}"
-                for sid, session in reversed(selected)
+                (
+                    f"[session_id:{sid}__occ{session_index}] "
+                    f"[source_session_id:{sid}] [session_date:{session_date}]\\n"
+                    f"{session_to_text(session)}"
+                )
+                for sid, session_date, session, session_index in reversed(selected)
                 if session_to_text(session)
             ]
             memory_retriever = build_hybrid_memory_retriever(
@@ -299,18 +315,27 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             )
             retrieval_latency_ms = (time.perf_counter() - retrieval_started) * 1000.0
             memory_units = []
-            seen_sessions = set()
+            seen_memory_ids = set()
             retrieved_session_ids_ordered = []
+            seen_source_ids = set()
             for hit in hits:
                 metadata = hit.get("metadata", {})
-                sid = str(metadata.get("session_id", ""))
-                if not sid:
-                    raise RuntimeError("Retrieved memory chunk has no session_id metadata")
-                if sid in seen_sessions:
+                memory_id = str(metadata.get("session_id", ""))
+                if not memory_id or memory_id not in source_session_by_memory_id:
+                    raise RuntimeError("Retrieved memory chunk has unknown session_id metadata")
+                if memory_id in seen_memory_ids:
                     continue
-                seen_sessions.add(sid)
-                retrieved_session_ids_ordered.append(sid)
-                memory_units.append(f"[session_id:{sid}]\n{hit.get('text', '')}")
+                seen_memory_ids.add(memory_id)
+                source_sid = source_session_by_memory_id[memory_id]
+                if source_sid in seen_source_ids:
+                    continue
+                seen_source_ids.add(source_sid)
+                retrieved_session_ids_ordered.append(source_sid)
+                session_date = date_by_memory_id[memory_id]
+                memory_units.append(
+                    f"[session_id:{memory_id}] [source_session_id:{source_sid}] "
+                    f"[session_date:{session_date}]\\n{hit.get('text', '')}"
+                )
                 if len(memory_units) >= args.retrieval_k:
                     break
 
