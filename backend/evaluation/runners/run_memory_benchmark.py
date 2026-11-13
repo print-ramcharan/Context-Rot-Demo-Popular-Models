@@ -64,9 +64,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     # Each memory is written under its originating platform. Retrieval below
     # deliberately omits platform_filter to model shared cross-platform memory.
     seen: set[str] = set()
+    memory_definitions: dict[str, tuple[str, str]] = {}
     for case in cases:
         for memory in case["memories"]:
             memory_id = str(memory["memory_id"])
+            definition = (str(memory["platform"]), str(memory["text"]))
+            if memory_id in memory_definitions and memory_definitions[memory_id] != definition:
+                raise ValueError(f"Inconsistent platform/text for memory_id: {memory_id}")
+            memory_definitions[memory_id] = definition
             if memory_id in seen:
                 continue
             seen.add(memory_id)
@@ -158,7 +163,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         },
         "per_query": per_query,
     }
-    (args.output_dir / "memory_retrieval_results.json").write_text(
+    (args.output_dir / f"memory_retrieval_results_{run_id}.json").write_text(
         json.dumps(result, indent=2), encoding="utf-8"
     )
     return result
