@@ -245,6 +245,10 @@ def fit_context(
         if not sep or not body:
             raise ValueError("Unable to fit the newest history unit within the token budget")
         keep = max(1, int(len(body) * 0.8))
+        if keep >= len(body):
+            raise ValueError(
+                "Prompt cannot fit within the declared token budget even after truncation"
+            )
         chosen[0] = header + "\n" + body[-keep:]
 
 
