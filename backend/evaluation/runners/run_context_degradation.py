@@ -73,11 +73,13 @@ def session_to_text(session: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def build_prompt(question: str, context: str) -> str:
+def build_prompt(question: str, context: str, question_date: str = "") -> str:
+    date_line = f"\nCurrent date: {question_date}" if question_date else ""
     return (
         "Answer the question using the supplied conversation history when it is "
         "relevant. If the history does not contain the answer, say that you do "
-        "not know. Do not invent facts.\n\n"
+        "not know. Do not invent facts."
+        f"{date_line}\n\n"
         f"CONVERSATION HISTORY:\n{context if context else '[No history supplied]'}\n\n"
         f"QUESTION:\n{question}\n\nANSWER:"
     )
@@ -130,6 +132,7 @@ def fit_context(
     candidates: list[str],
     max_prompt_tokens: int,
     counter: PromptTokenCounter,
+    question_date: str = "",
 ) -> tuple[str, int, list[str]]:
     """Pack whole evidence units, then verify the final prompt with the real tokenizer.
 
@@ -143,12 +146,12 @@ def fit_context(
     chosen: list[str] = []
     for candidate in candidates:
         trial = "\n\n".join(chosen + [candidate])
-        if conservative_estimate(build_prompt(question, trial)) <= max_prompt_tokens:
+        if conservative_estimate(build_prompt(question, trial, question_date)) <= max_prompt_tokens:
             chosen.append(candidate)
 
     while True:
         context = "\n\n".join(chosen)
-        actual_tokens = counter.count(build_prompt(question, context))
+        actual_tokens = counter.count(build_prompt(question, context, question_date))
         if actual_tokens <= max_prompt_tokens:
             return context, actual_tokens, chosen
         if not chosen:
@@ -204,6 +207,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     for item_index, item in enumerate(items):
         qid = str(item["question_id"])
         question = str(item["question"])
+        question_date = str(item.get("question_date", ""))
         answer = str(item.get("answer", ""))
         sessions = item.get("haystack_sessions", [])
         session_ids = list(map(str, item.get("haystack_session_ids", [])))
@@ -256,9 +260,9 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             }
             for arm, units in arms.items():
                 context, prompt_tokens, selected_units = fit_context(
-                    question, units, args.max_prompt_tokens, counter
+                    question, units, args.max_prompt_tokens, counter, question_date
                 )
-                prompt = build_prompt(question, context)
+                prompt = build_prompt(question, context, question_date)
                 included_session_ids = []
                 for unit in selected_units:
                     match = re.search(r"\[session_id:([^\]]+)\]", unit)
@@ -385,6 +389,25 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows({field: row.get(field) for field in fields} for row in rows)
+
+    # Official LongMemEval evaluator input: one JSONL per experimental arm.
+    hypothesis_paths = []
+    for history_size in history_sizes:
+        for arm in ("question_only", "recent_history", "external_memory"):
+            hypothesis_path = args.output_dir / (
+                f"hypotheses_{history_size}_{arm}_{run_id}.jsonl"
+            )
+            with hypothesis_path.open("w", encoding="utf-8") as handle:
+                for row in rows:
+                    if row["history_size"] == history_size and row["arm"] == arm:
+                        handle.write(json.dumps({
+                            "question_id": row["question_id"],
+                            "hypothesis": row["prediction"],
+                        }) + "\\n")
+            hypothesis_paths.append(str(hypothesis_path))
+
+    summary["official_evaluator_hypothesis_files"] = hypothesis_paths
+    output.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps({k: v for k, v in summary.items() if k != "per_question"}, indent=2))
     print(f"RESULT_JSON={output}")
     print(f"RESULT_CSV={csv_path}")
