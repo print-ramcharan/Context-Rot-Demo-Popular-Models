@@ -7,6 +7,7 @@ from evaluation.runners.run_context_degradation import (
     exact_match,
     fit_context,
     normalize_answer,
+    retrieval_metrics,
     select_history,
     token_f1,
 )
@@ -87,3 +88,22 @@ def test_fit_context_preserves_chronological_order_for_fitting_sessions():
 def test_fit_context_rejects_budget_smaller_than_question_prompt():
     with pytest.raises(ValueError, match="exceed"):
         fit_context("What city?", [], 1, CharacterCounter())
+
+
+
+def test_retrieval_precision_uses_actual_unique_sessions_returned():
+    recall, precision, mrr = retrieval_metrics(
+        ["relevant-a", "irrelevant-b"],
+        {"relevant-a"},
+    )
+    assert recall == 1.0
+    assert precision == 0.5
+    assert mrr == 1.0
+
+
+def test_retrieval_metrics_return_zero_when_nothing_retrieved():
+    assert retrieval_metrics([], {"gold"}) == (0.0, 0.0, 0.0)
+
+
+def test_retrieval_metrics_are_unavailable_without_gold_evidence():
+    assert retrieval_metrics(["session"], set()) == (None, None, None)
