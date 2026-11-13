@@ -93,8 +93,22 @@ python /tmp/LongMemEval/src/evaluation/evaluate_qa.py \
 
 Repeat for `question_only`, `recent_history`, and `long_context`. The official
 script writes a judged JSONL file with per-question `autoeval_label` values.
-Preserve the model identifier, judged output, dataset checksum, run configuration,
-and judge logs. Do not describe a non-GPT-4o judge as the official judge.
+After all four arms are judged, run the paired analysis (replace `<RUN_ID>` with
+the UTC run ID in the generated hypothesis filenames):
+
+```bash
+python -m evaluation.analyze_longmemeval_judged \
+  --run-dir evaluation/results/context_degradation_main \
+  --run-id <RUN_ID> \
+  --history-size all \
+  --dataset evaluation/data/longmemeval_s_cleaned.json
+```
+
+This produces overall and question-type accuracy, abstention accuracy, paired
+accuracy differences, bootstrap confidence intervals, Wilcoxon tests, and
+Holm-adjusted p-values. Preserve the model identifier, judged output, dataset
+checksum, run configuration, and judge logs. Do not describe a non-GPT-4o judge
+as the official judge.
 
 ## Reporting rules
 
