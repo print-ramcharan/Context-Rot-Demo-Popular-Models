@@ -48,6 +48,7 @@ def chunk_corpus(corpus: Dict[str, dict], chunk_size: int = 400, overlap: int = 
                         "doc_id": str(doc_id),
                         "parent_id": str(doc_id),
                         "source": title,
+                        "title": title,
                         "offset": chunk.get("offset", 0),
                         "length": chunk.get("length", len(chunk["text"])),
                     },
