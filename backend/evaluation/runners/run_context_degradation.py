@@ -297,7 +297,8 @@ def fit_context(
         if len(chosen) > 1:
             chosen.pop(0)  # discard oldest evidence first
             continue
-        header, sep, body = chosen[0].partition("\n")        if not sep or not body:
+        header, sep, body = chosen[0].partition("\n")
+        if not sep or not body:
             raise ValueError("Unable to fit the newest history unit within the token budget")
         keep = max(1, int(len(body) * 0.8))
         if keep >= len(body):
@@ -403,6 +404,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         index_started = time.perf_counter()
         store = ConversationStore(str(store_path))
         indexed_memory_ids = []
+        indexed_session_ids = []
         for sid, session_date, session, session_index in all_history:
             memory_id = f"{sid}__occ{session_index}"
             text = session_to_text(session)
@@ -417,6 +419,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     overlap=args.overlap,
                 )
                 indexed_memory_ids.append(memory_id)
+                indexed_session_ids.append(sid)
         memory_indexing_latency_ms = (time.perf_counter() - index_started) * 1000.0
         memory_index_size_bytes = sum(
             path.stat().st_size for path in store_path.rglob("*") if path.is_file()
