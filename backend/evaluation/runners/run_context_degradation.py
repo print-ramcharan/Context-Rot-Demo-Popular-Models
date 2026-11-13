@@ -78,8 +78,9 @@ def exact_match(prediction: str, reference: str) -> float:
 def retrieval_metrics(
     retrieved_session_ids: list[str],
     gold_session_ids: set[str],
+    k: int | None = None,
 ) -> tuple[float | None, float | None, float | None]:
-    """Return session-level Recall@K, Precision@K and MRR@K."""
+    """Return standard session-level Recall@K, Precision@K and MRR@K."""
     if not gold_session_ids:
         return None, None, None
     if not retrieved_session_ids:
@@ -89,9 +90,12 @@ def retrieval_metrics(
         if sid in gold_session_ids
     ]
     recall = len(set(relevant)) / len(gold_session_ids)
-    precision = len(relevant) / len(retrieved_session_ids)
+    cutoff = k if k is not None else len(retrieved_session_ids)
+    ranked = retrieved_session_ids[:cutoff]
+    relevant_at_k = [sid for sid in ranked if sid in gold_session_ids]
+    precision = len(relevant_at_k) / cutoff if cutoff > 0 else 0.0
     reciprocal_rank = next(
-        (1.0 / rank for rank, sid in enumerate(retrieved_session_ids, 1)
+        (1.0 / rank for rank, sid in enumerate(ranked, 1)
          if sid in gold_session_ids),
         0.0,
     )
@@ -100,17 +104,20 @@ def retrieval_metrics(
 def extended_retrieval_metrics(
     retrieved_session_ids: list[str],
     gold_session_ids: set[str],
+    k: int | None = None,
 ) -> dict[str, float | int | None]:
-    """Session-level ranking metrics over unique source sessions."""
+    """Standard session-level ranking metrics at the requested cutoff K."""
     if not gold_session_ids:
         return {"hit_at_k": None, "ndcg_at_k": None,
                 "average_precision_at_k": None, "evidence_completeness_at_k": None}
     if not retrieved_session_ids:
         return {"hit_at_k": 0, "ndcg_at_k": 0.0,
                 "average_precision_at_k": 0.0, "evidence_completeness_at_k": 0}
-    flags = [1 if sid in gold_session_ids else 0 for sid in retrieved_session_ids]
+    cutoff = k if k is not None else len(retrieved_session_ids)
+    ranked = retrieved_session_ids[:cutoff]
+    flags = [1 if sid in gold_session_ids else 0 for sid in ranked]
     dcg = sum(rel / math.log2(rank + 1) for rank, rel in enumerate(flags, 1))
-    ideal_hits = min(len(gold_session_ids), len(flags))
+    ideal_hits = min(len(gold_session_ids), cutoff)
     idcg = sum(1.0 / math.log2(rank + 1) for rank in range(1, ideal_hits + 1))
     hits = 0
     precision_sum = 0.0
@@ -122,7 +129,7 @@ def extended_retrieval_metrics(
         "hit_at_k": int(any(flags)),
         "ndcg_at_k": dcg / idcg if idcg else 0.0,
         "average_precision_at_k": precision_sum / ideal_hits if ideal_hits else 0.0,
-        "evidence_completeness_at_k": int(gold_session_ids.issubset(set(retrieved_session_ids))),
+        "evidence_completeness_at_k": int(gold_session_ids.issubset(set(ranked))),
     }
 
 
@@ -527,9 +534,11 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                         retrieval_recall,
                         retrieval_precision,
                         retrieval_mrr,
-                    ) = retrieval_metrics(retrieved_session_ids, gold_session_ids)
+                    ) = retrieval_metrics(
+                        retrieved_session_ids, gold_session_ids, args.retrieval_k
+                    )
                     retrieval_extended = extended_retrieval_metrics(
-                        retrieved_session_ids, gold_session_ids
+                        retrieved_session_ids, gold_session_ids, args.retrieval_k
                     )
                 else:
                     retrieval_recall = retrieval_precision = retrieval_mrr = None
