@@ -128,10 +128,11 @@ def main() -> None:
     all_tests = []
     for baseline in ("question_only", "recent_history", "long_context"):
         ids = sorted(expected)
-        before = [judged[baseline][qid]["correct"] for qid in ids]
-        after = [judged["external_memory"][qid]["correct"] for qid in ids]
-        differences = [b - a for a, b in zip(before, after)]
-        test = wilcoxon_signed_rank_test(before, after)
+        baseline_values = [judged[baseline][qid]["correct"] for qid in ids]
+        external_values = [judged["external_memory"][qid]["correct"] for qid in ids]
+        # Positive values mean external memory improves accuracy over the baseline.
+        differences = [external - base for base, external in zip(baseline_values, external_values)]
+        test = wilcoxon_signed_rank_test(baseline_values, external_values)
         result = {
             "comparison": f"external_memory_vs_{baseline}",
             "n_questions": len(ids),
