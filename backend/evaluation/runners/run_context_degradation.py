@@ -162,63 +162,21 @@ class PromptTokenCounter:
         if self.llm.provider == "huggingface":
             return len(self.llm.tokenizer.encode(prompt, add_special_tokens=True))
         if self.llm.provider == "gemini":
-            current_model = self.llm.model
-
-            model_infos = list(self.llm.client.models.list())
-            candidates = [current_model]
-
-            for info in model_infos:
-                name = (getattr(info, "name", "") or "").removeprefix("models/")
-                actions = (
-                    getattr(info, "supported_actions", None)
-                    or getattr(info, "supported_generation_methods", None)
-                    or []
+            # Count tokens with the exact same model used for generation.
+            expected_model = "gemini-3.5-flash-lite"
+            if self.llm.model != expected_model:
+                raise RuntimeError(
+                    f"Gemini model mismatch: expected {expected_model}, got {self.llm.model}"
                 )
-                lowered = name.lower()
-                excluded = (
-                    "embedding", "embed", "image", "imagen", "veo",
-                    "audio", "tts", "live", "deep-research",
-                    "antigravity", "nano-banana",
+            if not hasattr(self, "_gemini_token_cache"):
+                self._gemini_token_cache = {}
+            if prompt not in self._gemini_token_cache:
+                result = self.llm.client.models.count_tokens(
+                    model=expected_model,
+                    contents=prompt,
                 )
-                if (
-                    (lowered.startswith("gemini-") or lowered.startswith("gemma-"))
-                    and "countTokens" in actions
-                    and not any(term in lowered for term in excluded)
-                    and name not in candidates
-                ):
-                    candidates.append(name)
-
-            failures = []
-            for model_name in candidates:
-                try:
-                    result = self.llm.client.models.count_tokens(
-                        model=model_name,
-                        contents=prompt,
-                    )
-                    self.llm.model = model_name
-                    return int(result.total_tokens)
-                except Exception as exc:
-                    message = str(exc)
-                    failures.append(f"{model_name}: {message[:200]}")
-                    retryable = any(
-                        code in message.upper()
-                        for code in (
-                            "404", "NOT_FOUND", "429", "RESOURCE_EXHAUSTED",
-                            "500", "INTERNAL", "503", "UNAVAILABLE",
-                            "504", "DEADLINE_EXCEEDED",
-                        )
-                    )
-                    if retryable:
-                        print(f"Token counting unavailable on {model_name}; trying next model.")
-                        continue
-                    raise RuntimeError(
-                        f"Gemini token counting failed on {model_name}: {exc}"
-                    ) from exc
-
-            raise RuntimeError(
-                "No discovered Gemini model could count tokens:\\n"
-                + "\\n".join(failures)
-            )
+                self._gemini_token_cache[prompt] = int(result.total_tokens)
+            return self._gemini_token_cache[prompt]
         if self.llm.provider == "anthropic":
             result = self.llm.client.messages.count_tokens(
                 model=self.llm.model,
