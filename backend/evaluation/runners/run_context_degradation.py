@@ -85,14 +85,10 @@ def retrieval_metrics(
         return None, None, None
     if not retrieved_session_ids:
         return 0.0, 0.0, 0.0
-    relevant = [
-        sid for sid in retrieved_session_ids
-        if sid in gold_session_ids
-    ]
-    recall = len(set(relevant)) / len(gold_session_ids)
     cutoff = k if k is not None else len(retrieved_session_ids)
     ranked = retrieved_session_ids[:cutoff]
     relevant_at_k = [sid for sid in ranked if sid in gold_session_ids]
+    recall = len(set(relevant_at_k)) / len(gold_session_ids)
     precision = len(relevant_at_k) / cutoff if cutoff > 0 else 0.0
     reciprocal_rank = next(
         (1.0 / rank for rank, sid in enumerate(ranked, 1)
