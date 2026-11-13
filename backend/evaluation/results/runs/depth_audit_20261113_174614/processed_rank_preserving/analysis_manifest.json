@@ -1,0 +1,14 @@
+{
+  "analysis": "rank-preserving BEIR evaluation",
+  "raw_results_modified": false,
+  "ranking_source": "retrieved_document_ids order in each raw query record",
+  "tie_handling": "unique descending synthetic scores derived from stored rank",
+  "ndcg_implementation": "pytrec_eval ndcg_cut (standard exponential gain)",
+  "significance": "paired bootstrap 95% CI; Wilcoxon signed-rank; Holm correction",
+  "holm_family_size": 16,
+  "query_counts": {
+    "scifact": 300,
+    "nfcorpus": 323
+  },
+  "run_dir": "/Users/ram/Desktop/Context-Rot-Demo-Popular-Models/backend/evaluation/results/runs/depth_audit_20261113_174614"
+}

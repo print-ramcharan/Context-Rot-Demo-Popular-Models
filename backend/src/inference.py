@@ -117,7 +117,7 @@ class LLMInference:
             "huggingface": "mistralai/Mistral-7B-Instruct-v0.2",
             "anthropic": "claude-3-sonnet-20240229",
             "openai": "gpt-4-turbo",
-            "gemini": "gemini-2.5-flash"
+            "gemini": "gemini-1.5-flash"
         }
         return defaults.get(self.provider, "llama2")
     
@@ -200,27 +200,22 @@ class LLMInference:
             raise RuntimeError("Install with: pip install openai")
             
     def _init_gemini(self):
-        """Initialize Google Gemini API."""
-        try:
-            import google.generativeai as genai
-            
-            
-            # Load environment variables from .env file
-            load_dotenv()
-            from pathlib import Path
-            load_dotenv(Path(__file__).resolve().parents[1] / ".env")
-            
-            api_key = self.config.get('api_key') or os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
-            if not api_key:
-                raise ValueError(
-                    "Gemini API key not found. Please set 'api_key' in config.yaml "
-                    "or set the GEMINI_API_KEY or GOOGLE_API_KEY environment variable in your .env file."
-                )
-            genai.configure(api_key=api_key.strip())
-            self.client = genai.GenerativeModel(self.model)
-        except ImportError:
-            raise RuntimeError("Install with: pip install google-generativeai python-dotenv")
-    
+        """Initialize Gemini using the backend .env file."""
+        from pathlib import Path
+        from google import genai
+
+        env_path = Path(__file__).resolve().parents[1] / ".env"
+        load_dotenv(env_path, override=False)
+
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                f"GEMINI_API_KEY not found in {env_path}"
+            )
+
+        self.model = "gemini-1.5-flash"
+        self.client = genai.Client(api_key=api_key.strip())
+
     def generate(self, prompt: str, max_tokens: int = 1000, 
                  temperature: float = 0.7) -> Dict[str, Any]:
         """
@@ -352,63 +347,41 @@ class LLMInference:
             }
         }
         
-    def _generate_gemini(self, prompt: str, max_tokens: int, 
-                         temperature: float) -> dict:
-        """Generate using Google Gemini API with automatic retry for rate limits."""
-        import google.generativeai as genai
-        
-        generation_config = genai.types.GenerationConfig(
-            max_output_tokens=max_tokens,
-            temperature=temperature
+    def _generate_gemini(
+        self,
+        prompt: str,
+        max_tokens: int,
+        temperature: float
+    ) -> dict:
+        """Generate using only Gemini 1.5 Flash."""
+        from google.genai import types
+
+        response = self.client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                max_output_tokens=max_tokens,
+                temperature=temperature,
+            ),
         )
-        
-        max_retries = 5
-        base_wait = 2.0  # seconds
-        
-        for attempt in range(max_retries + 1):
-            try:
-                response = self.client.generate_content(
-                    prompt,
-                    generation_config=generation_config
-                )
-                
-                # Check if response has text (might be blocked by safety filters)
-                try:
-                    text = response.text
-                except ValueError:
-                    # If the response doesn't contain text, check if it's because it was blocked
-                    if response.candidates:
-                        text = "[Blocked by safety filter or other candidate issue]"
-                    else:
-                        text = "[No response generated]"
-                
-                # Extract usage info if available
-                usage = getattr(response, 'usage_metadata', None)
-                tokens = {
-                    'prompt': usage.prompt_token_count if usage else 0,
-                    'completion': usage.candidates_token_count if usage else 0,
-                    'total': usage.total_token_count if usage else 0
-                }
-                
-                return {
-                    'response': text,
-                    'model': self.model,
-                    'tokens_used': tokens
-                }
-            except Exception as e:
-                error_str = str(e)
-                # Aggressive retry on rate limit (429) errors for Free Tier
-                if "429" in error_str and attempt < max_retries:
-                    wait_time = base_wait * (1.5 ** attempt) # Slightly gentler growth
-                    import logging
-                    logging.getLogger(__name__).warning(
-                        f"!!! RATE LIMIT HIT (429) !!! Attempt {attempt + 1}/{max_retries + 1}. "
-                        f"Retrying in {wait_time:.1f}s... (Free Tier RPM is very low)"
-                    )
-                    time.sleep(wait_time)
-                    continue
-                raise RuntimeError(f"Gemini generation failed: {e}")
-    
+
+        text = response.text
+
+        if not text or not text.strip():
+            raise RuntimeError("Gemini returned an empty response.")
+
+        usage = response.usage_metadata
+
+        return {
+            "response": text.strip(),
+            "model": "gemini-1.5-flash",
+            "tokens_used": {
+                "prompt": usage.prompt_token_count if usage else 0,
+                "completion": usage.candidates_token_count if usage else 0,
+                "total": usage.total_token_count if usage else 0,
+            },
+        }
+
     async def stream_generate(self, prompt: str, max_tokens: int = 1000, 
                         temperature: float = 0.7):
         """
@@ -444,41 +417,36 @@ class LLMInference:
             yield {"text": res["response"], "tokens": res["tokens_used"], "done": True}
 
     async def _stream_generate_gemini_async(self, prompt: str, max_tokens: int, temperature: float):
-        """Asynchronous stream using Google Gemini API."""
-        import google.generativeai as genai
-        
-        generation_config = genai.types.GenerationConfig(
-            max_output_tokens=max_tokens,
-            temperature=temperature
-        )
-        
-        try:
-            # Using the async version of generate_content
-            response_stream = await self.client.generate_content_async(
-                prompt,
-                generation_config=generation_config,
-                stream=True
-            )
-            
-            async for chunk in response_stream:
-                try:
-                    chunk_text = chunk.text
-                    yield {"text": chunk_text, "done": False}
-                except (ValueError, Exception):
-                    # Occurs if response is blocked by safety filters
-                    yield {"text": "[Chunk blocked]", "done": False}
-            
-            # Final metadata
-            usage = getattr(response_stream, 'usage_metadata', None)
-            tokens = {
-                'prompt': usage.prompt_token_count if usage else 0,
-                'completion': usage.candidates_token_count if usage else 0,
-                'total': usage.total_token_count if usage else 0
-            }
-            yield {"tokens": tokens, "done": True}
+        """Stream Gemini output using the Google Gen AI SDK."""
+        from google.genai import types
 
-        except Exception as e:
-            yield {"error": str(e), "done": True}
+        config = types.GenerateContentConfig(
+            max_output_tokens=max_tokens,
+            temperature=temperature,
+        )
+        try:
+            stream = await self.client.aio.models.generate_content_stream(
+                model=self.model,
+                contents=prompt,
+                config=config,
+            )
+            usage = None
+            async for chunk in stream:
+                if getattr(chunk, "usage_metadata", None):
+                    usage = chunk.usage_metadata
+                if getattr(chunk, "text", None):
+                    yield {"text": chunk.text, "done": False}
+
+            yield {
+                "tokens": {
+                    "prompt": getattr(usage, "prompt_token_count", 0) if usage else 0,
+                    "completion": getattr(usage, "candidates_token_count", 0) if usage else 0,
+                    "total": getattr(usage, "total_token_count", 0) if usage else 0,
+                },
+                "done": True,
+            }
+        except Exception as exc:
+            raise RuntimeError(f"Gemini streaming failed: {exc}") from exc
 
     def generate_with_retry(self, prompt: str, max_retries: int = 3, 
                             backoff: float = 1.0, **kwargs) -> dict:

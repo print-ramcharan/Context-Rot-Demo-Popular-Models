@@ -1,0 +1,362 @@
+{
+  "benchmark": "LongMemEval controlled context-degradation",
+  "run_id_utc": "20261113T125026Z",
+  "dataset": "evaluation/data/longmemeval_s_cleaned.json",
+  "dataset_sha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442",
+  "n_questions": 1,
+  "chunk_size_words": 220,
+  "chunk_overlap_words": 30,
+  "embedding_model": "all-MiniLM-L6-v2",
+  "retrieval_k_unique_sessions": 30,
+  "history_sizes": [
+    "all"
+  ],
+  "max_prompt_tokens": 4096,
+  "long_context_max_prompt_tokens": 32768,
+  "long_context_baseline_note": "The long_context arm receives all selected history sessions up to its separately declared token budget; for history_size=all this is the full LongMemEval-S history subject to that budget.",
+  "retrieval_method": "BM25 + FAISS dense retrieval + RRF + cross-encoder reranking",
+  "retrieval_candidate_pool_size": 100,
+  "retrieval_top_k": 30,
+  "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+  "provider": "gemini",
+  "model": "gemini-2.5-flash",
+  "temperature": 0.0,
+  "max_output_tokens": 128,
+  "metrics": {
+    "all:question_only": {
+      "n": 1,
+      "exact_match": 0.0,
+      "token_f1": 0.0,
+      "mean_prompt_tokens": 84,
+      "mean_generation_latency_ms": 1671.35,
+      "mean_memory_retrieval_latency_ms": null,
+      "retrieval_recall_at_k": null,
+      "retrieval_precision_at_k": null,
+      "retrieval_mrr_at_k": null,
+      "p50_generation_latency_ms": 1671.35,
+      "p95_generation_latency_ms": 1671.35
+    },
+    "all:recent_history": {
+      "n": 1,
+      "exact_match": 0.0,
+      "token_f1": 0.0,
+      "mean_prompt_tokens": 2517,
+      "mean_generation_latency_ms": 1815.48,
+      "mean_memory_retrieval_latency_ms": null,
+      "retrieval_recall_at_k": null,
+      "retrieval_precision_at_k": null,
+      "retrieval_mrr_at_k": null,
+      "p50_generation_latency_ms": 1815.48,
+      "p95_generation_latency_ms": 1815.48
+    },
+    "all:long_context": {
+      "n": 1,
+      "exact_match": 0.0,
+      "token_f1": 0.0,
+      "mean_prompt_tokens": 21929,
+      "mean_generation_latency_ms": 3138.91,
+      "mean_memory_retrieval_latency_ms": null,
+      "retrieval_recall_at_k": null,
+      "retrieval_precision_at_k": null,
+      "retrieval_mrr_at_k": null,
+      "p50_generation_latency_ms": 3138.91,
+      "p95_generation_latency_ms": 3138.91
+    },
+    "all:external_memory": {
+      "n": 1,
+      "exact_match": 0.0,
+      "token_f1": 0.0,
+      "mean_prompt_tokens": 2975,
+      "mean_generation_latency_ms": 1663.61,
+      "mean_memory_retrieval_latency_ms": 3370.32,
+      "retrieval_recall_at_k": 1.0,
+      "retrieval_precision_at_k": 0.033333,
+      "retrieval_mrr_at_k": 1.0,
+      "p50_generation_latency_ms": 1663.61,
+      "p95_generation_latency_ms": 1663.61
+    }
+  },
+  "paired_significance": {
+    "all": [
+      {
+        "comparison": "external_memory_vs_recent_history",
+        "metric": "token_f1",
+        "n_questions": 1,
+        "mean_difference": 0.0,
+        "bootstrap_ci_95": [
+          0.0,
+          0.0
+        ],
+        "wilcoxon_statistic": 0.0,
+        "wilcoxon_p_value": 1.0,
+        "wilcoxon_p_value_holm": 1.0,
+        "significant_holm_0_05": false
+      },
+      {
+        "comparison": "external_memory_vs_recent_history",
+        "metric": "exact_match",
+        "n_questions": 1,
+        "mean_difference": 0.0,
+        "bootstrap_ci_95": [
+          0.0,
+          0.0
+        ],
+        "wilcoxon_statistic": 0.0,
+        "wilcoxon_p_value": 1.0,
+        "wilcoxon_p_value_holm": 1.0,
+        "significant_holm_0_05": false
+      },
+      {
+        "comparison": "external_memory_vs_long_context",
+        "metric": "token_f1",
+        "n_questions": 1,
+        "mean_difference": 0.0,
+        "bootstrap_ci_95": [
+          0.0,
+          0.0
+        ],
+        "wilcoxon_statistic": 0.0,
+        "wilcoxon_p_value": 1.0,
+        "wilcoxon_p_value_holm": 1.0,
+        "significant_holm_0_05": false
+      },
+      {
+        "comparison": "external_memory_vs_long_context",
+        "metric": "exact_match",
+        "n_questions": 1,
+        "mean_difference": 0.0,
+        "bootstrap_ci_95": [
+          0.0,
+          0.0
+        ],
+        "wilcoxon_statistic": 0.0,
+        "wilcoxon_p_value": 1.0,
+        "wilcoxon_p_value_holm": 1.0,
+        "significant_holm_0_05": false
+      },
+      {
+        "comparison": "external_memory_vs_question_only",
+        "metric": "token_f1",
+        "n_questions": 1,
+        "mean_difference": 0.0,
+        "bootstrap_ci_95": [
+          0.0,
+          0.0
+        ],
+        "wilcoxon_statistic": 0.0,
+        "wilcoxon_p_value": 1.0,
+        "wilcoxon_p_value_holm": 1.0,
+        "significant_holm_0_05": false
+      },
+      {
+        "comparison": "external_memory_vs_question_only",
+        "metric": "exact_match",
+        "n_questions": 1,
+        "mean_difference": 0.0,
+        "bootstrap_ci_95": [
+          0.0,
+          0.0
+        ],
+        "wilcoxon_statistic": 0.0,
+        "wilcoxon_p_value": 1.0,
+        "wilcoxon_p_value_holm": 1.0,
+        "significant_holm_0_05": false
+      }
+    ]
+  },
+  "per_question": [
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "history_size": "all",
+      "history_sessions_available": 53,
+      "arm": "question_only",
+      "prediction": "I do not know what",
+      "gold_answer": "Business Administration",
+      "exact_match": 0.0,
+      "token_f1": 0.0,
+      "prompt_tokens": 84,
+      "prompt_token_budget": 4096,
+      "context_characters": 0,
+      "context_session_ids": [],
+      "retrieved_session_ids": [],
+      "gold_session_count": 1,
+      "retrieval_recall_at_k": null,
+      "retrieval_precision_at_k": null,
+      "retrieval_mrr_at_k": null,
+      "generation_latency_ms": 1671.347,
+      "reported_latency_ms": 1671.2839603424072,
+      "tokens_used": {
+        "prompt": 85,
+        "completion": 5,
+        "total": 209
+      },
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "cache_hit": false,
+      "memory_retrieval_latency_ms": null,
+      "retrieval_method": "BM25+FAISS+RRF+cross-encoder"
+    },
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "history_size": "all",
+      "history_sessions_available": 53,
+      "arm": "recent_history",
+      "prediction": "I do not know",
+      "gold_answer": "Business Administration",
+      "exact_match": 0.0,
+      "token_f1": 0.0,
+      "prompt_tokens": 2517,
+      "prompt_token_budget": 4096,
+      "context_characters": 11483,
+      "context_session_ids": [
+        "ultrachat_486410__occ50",
+        "sharegpt_BvwQVCO_0__occ44",
+        "sharegpt_QZMeA7V_17__occ43",
+        "sharegpt_jVow2vn_0__occ23"
+      ],
+      "retrieved_session_ids": [],
+      "gold_session_count": 1,
+      "retrieval_recall_at_k": null,
+      "retrieval_precision_at_k": null,
+      "retrieval_mrr_at_k": null,
+      "generation_latency_ms": 1815.477,
+      "reported_latency_ms": 1815.4432773590088,
+      "tokens_used": {
+        "prompt": 2518,
+        "completion": 4,
+        "total": 2642
+      },
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "cache_hit": false,
+      "memory_retrieval_latency_ms": null,
+      "retrieval_method": "BM25+FAISS+RRF+cross-encoder"
+    },
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "history_size": "all",
+      "history_sessions_available": 53,
+      "arm": "long_context",
+      "prediction": "You graduated with",
+      "gold_answer": "Business Administration",
+      "exact_match": 0.0,
+      "token_f1": 0.0,
+      "prompt_tokens": 21929,
+      "prompt_token_budget": 32768,
+      "context_characters": 97961,
+      "context_session_ids": [
+        "84503ce4_1__occ52",
+        "answer_280352e9__occ51",
+        "ultrachat_486410__occ50",
+        "e27891d3_2__occ49",
+        "02bd2b90_3__occ48",
+        "ultrachat_458322__occ47",
+        "0586f435_3__occ46",
+        "sharegpt_BvwQVCO_0__occ44",
+        "sharegpt_QZMeA7V_17__occ43",
+        "ultrachat_57566__occ38",
+        "sharegpt_1L5GXZJ_0__occ32"
+      ],
+      "retrieved_session_ids": [],
+      "gold_session_count": 1,
+      "retrieval_recall_at_k": null,
+      "retrieval_precision_at_k": null,
+      "retrieval_mrr_at_k": null,
+      "generation_latency_ms": 3138.907,
+      "reported_latency_ms": 3138.8819217681885,
+      "tokens_used": {
+        "prompt": 21930,
+        "completion": 3,
+        "total": 22054
+      },
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "cache_hit": false,
+      "memory_retrieval_latency_ms": null,
+      "retrieval_method": "BM25+FAISS+RRF+cross-encoder"
+    },
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "history_size": "all",
+      "history_sessions_available": 53,
+      "arm": "external_memory",
+      "prediction": "You graduated with",
+      "gold_answer": "Business Administration",
+      "exact_match": 0.0,
+      "token_f1": 0.0,
+      "prompt_tokens": 2975,
+      "prompt_token_budget": 4096,
+      "context_characters": 11927,
+      "context_session_ids": [
+        "answer_280352e9__occ51",
+        "sharegpt_QZMeA7V_17__occ43",
+        "ultrachat_530213__occ25",
+        "d414cac5_4__occ35",
+        "f6859b48_2__occ5",
+        "85a1be56_1__occ1",
+        "ultrachat_57566__occ38",
+        "47f00a5f__occ26",
+        "sharegpt_DGTCD7D_0__occ4"
+      ],
+      "retrieved_session_ids": [
+        "answer_280352e9",
+        "sharegpt_QZMeA7V_17",
+        "ultrachat_530213",
+        "d414cac5_4",
+        "f6859b48_2",
+        "85a1be56_1",
+        "ultrachat_57566",
+        "47f00a5f",
+        "d94b721b",
+        "sharegpt_DGTCD7D_0",
+        "ec6ca9ef",
+        "sharegpt_T1EiHWI_13",
+        "ultrachat_458322",
+        "ultrachat_214101",
+        "02bd2b90_3",
+        "41abc171_4",
+        "3418b277_3",
+        "2ae4f277_2",
+        "e27891d3_2",
+        "ultrachat_215809",
+        "a041cdd4_3",
+        "aae4411b_2",
+        "sharegpt_Jcy1CVN_0",
+        "e348269f_1",
+        "sharegpt_UnjngE7_65",
+        "978c0e70",
+        "c3cd646c_1",
+        "7045db85_1",
+        "4fd76316",
+        "5dac7cc2_1"
+      ],
+      "gold_session_count": 1,
+      "retrieval_recall_at_k": 1.0,
+      "retrieval_precision_at_k": 0.03333333333333333,
+      "retrieval_mrr_at_k": 1.0,
+      "generation_latency_ms": 1663.611,
+      "reported_latency_ms": 1663.5839939117432,
+      "tokens_used": {
+        "prompt": 2976,
+        "completion": 3,
+        "total": 3100
+      },
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "cache_hit": false,
+      "memory_retrieval_latency_ms": 3370.319,
+      "retrieval_method": "BM25+FAISS+RRF+cross-encoder"
+    }
+  ],
+  "scoring_note": "Exact match and token F1 are automatic diagnostics only. Use the official LongMemEval LLM-judge protocol for publication-quality answer scoring.",
+  "official_evaluator_hypothesis_files": [
+    "evaluation/results/context_degradation_smoke/hypotheses_all_question_only_20261113T125026Z.jsonl",
+    "evaluation/results/context_degradation_smoke/hypotheses_all_recent_history_20261113T125026Z.jsonl",
+    "evaluation/results/context_degradation_smoke/hypotheses_all_long_context_20261113T125026Z.jsonl",
+    "evaluation/results/context_degradation_smoke/hypotheses_all_external_memory_20261113T125026Z.jsonl"
+  ]
+}
