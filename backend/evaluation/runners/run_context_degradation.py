@@ -378,7 +378,6 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     output = args.output_dir / f"context_degradation_{run_id}.json"
-    output.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     csv_path = args.output_dir / f"context_degradation_{run_id}.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         fields = [
@@ -403,7 +402,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                         handle.write(json.dumps({
                             "question_id": row["question_id"],
                             "hypothesis": row["prediction"],
-                        }) + "\\n")
+                        }) + "\n")
             hypothesis_paths.append(str(hypothesis_path))
 
     summary["official_evaluator_hypothesis_files"] = hypothesis_paths
