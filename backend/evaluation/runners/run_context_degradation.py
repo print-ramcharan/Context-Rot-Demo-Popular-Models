@@ -301,7 +301,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             memory_units = []
             seen_sessions = set()
             for hit in hits:
-                sid = str(hit.get("session_id", ""))
+                metadata = hit.get("metadata", {})
+                sid = str(metadata.get("session_id", ""))
+                if not sid:
+                    raise RuntimeError("Retrieved memory chunk has no session_id metadata")
                 if sid in seen_sessions:
                     continue
                 seen_sessions.add(sid)
