@@ -199,7 +199,7 @@ def main() -> None:
             mrr_key: round(statistics.mean(row[mrr_key] for row in subset), 6),
         }
 
-    (args.output_dir / "longmemeval_retrieval_results.json").write_text(
+    (args.output_dir / f"longmemeval_retrieval_results_{run_id}.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
     )
     print(json.dumps({k: v for k, v in summary.items() if k != "per_question"}, indent=2))
