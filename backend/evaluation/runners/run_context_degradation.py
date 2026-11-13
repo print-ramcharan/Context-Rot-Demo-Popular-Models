@@ -311,13 +311,14 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 memory_units.append(f"[session_id:{sid}]\n{hit.get('text', '')}")
 
             arms = {
-                "question_only": [],
-                "recent_history": recent_units,
-                "external_memory": memory_units,
+                "question_only": ([], args.max_prompt_tokens),
+                "recent_history": (recent_units, args.max_prompt_tokens),
+                "long_context": (recent_units, args.long_context_max_prompt_tokens),
+                "external_memory": (memory_units, args.max_prompt_tokens),
             }
-            for arm, units in arms.items():
+            for arm, (units, prompt_budget) in arms.items():
                 context, prompt_tokens, selected_units = fit_context(
-                    question, units, args.max_prompt_tokens, counter, question_date
+                    question, units, prompt_budget, counter, question_date
                 )
                 prompt = build_prompt(question, context, question_date)
                 included_session_ids = []
@@ -333,6 +334,26 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 )
                 elapsed_ms = (time.perf_counter() - start) * 1000.0
                 prediction = str(generated.get("response", "")).strip()
+                retrieved_session_ids = list(seen_sessions) if arm == "external_memory" else []
+                gold_session_ids = set(map(str, item.get("answer_session_ids", [])))
+                retrieved_relevant = [
+                    sid for sid in retrieved_session_ids if sid in gold_session_ids
+                ]
+                retrieval_recall = (
+                    len(set(retrieved_relevant)) / len(gold_session_ids)
+                    if arm == "external_memory" and gold_session_ids else None
+                )
+                retrieval_precision = (
+                    len(retrieved_relevant) / len(retrieved_session_ids)
+                    if arm == "external_memory" and retrieved_session_ids else None
+                )
+                retrieval_mrr = None
+                if arm == "external_memory" and gold_session_ids:
+                    retrieval_mrr = next(
+                        (1.0 / rank for rank, sid in enumerate(retrieved_session_ids, 1)
+                         if sid in gold_session_ids),
+                        0.0,
+                    )
                 row = {
                     "question_id": qid,
                     "question_type": item.get("question_type"),
@@ -344,8 +365,14 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "exact_match": exact_match(prediction, answer),
                     "token_f1": token_f1(prediction, answer),
                     "prompt_tokens": prompt_tokens,
+                    "prompt_token_budget": prompt_budget,
                     "context_characters": len(context),
                     "context_session_ids": included_session_ids,
+                    "retrieved_session_ids": retrieved_session_ids,
+                    "gold_session_count": len(gold_session_ids),
+                    "retrieval_recall_at_k": retrieval_recall,
+                    "retrieval_precision_at_k": retrieval_precision,
+                    "retrieval_mrr_at_k": retrieval_mrr,
                     "generation_latency_ms": round(elapsed_ms, 3),
                     "reported_latency_ms": generated.get("latency_ms"),
                     "tokens_used": generated.get("tokens_used", {}),
@@ -371,7 +398,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     }
     for history_size in history_sizes:
         significance[history_size] = []
-        for baseline in ("recent_history", "question_only"):
+        for baseline in ("recent_history", "long_context", "question_only"):
             for metric in ("token_f1", "exact_match"):
                 differences = [
                     row_lookup[(str(item["question_id"]), history_size, "external_memory")][metric]
@@ -411,6 +438,12 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "n_questions": len(items),
         "history_sizes": history_sizes,
         "max_prompt_tokens": args.max_prompt_tokens,
+        "long_context_max_prompt_tokens": args.long_context_max_prompt_tokens,
+        "long_context_baseline_note": (
+            "The long_context arm receives all selected history sessions up to its "
+            "separately declared token budget; for history_size=all this is the full "
+            "LongMemEval-S history subject to that budget."
+        ),
         "retrieval_method": "BM25 + FAISS dense retrieval + RRF + cross-encoder reranking",
         "retrieval_candidate_pool_size": args.candidate_pool_size,
         "retrieval_top_k": args.retrieval_k,
@@ -435,6 +468,24 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             "token_f1": round(statistics.mean(r["token_f1"] for r in group), 6),
             "mean_prompt_tokens": round(statistics.mean(r["prompt_tokens"] for r in group), 2),
             "mean_generation_latency_ms": round(statistics.mean(latencies), 2),
+            "mean_memory_retrieval_latency_ms": round(
+                statistics.mean(float(r["memory_retrieval_latency_ms"]) for r in group), 2
+            ),
+            "retrieval_recall_at_k": (
+                round(statistics.mean([r["retrieval_recall_at_k"] for r in group
+                                       if r["retrieval_recall_at_k"] is not None]), 6)
+                if any(r["retrieval_recall_at_k"] is not None for r in group) else None
+            ),
+            "retrieval_precision_at_k": (
+                round(statistics.mean([r["retrieval_precision_at_k"] for r in group
+                                       if r["retrieval_precision_at_k"] is not None]), 6)
+                if any(r["retrieval_precision_at_k"] is not None for r in group) else None
+            ),
+            "retrieval_mrr_at_k": (
+                round(statistics.mean([r["retrieval_mrr_at_k"] for r in group
+                                       if r["retrieval_mrr_at_k"] is not None]), 6)
+                if any(r["retrieval_mrr_at_k"] is not None for r in group) else None
+            ),
             "p50_generation_latency_ms": round(sorted(latencies)[math.floor(0.50 * (len(latencies)-1))], 2),
             "p95_generation_latency_ms": round(sorted(latencies)[math.ceil(0.95 * (len(latencies)-1))], 2),
         }
@@ -445,8 +496,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         fields = [
             "question_id", "question_type", "history_size", "arm", "exact_match",
-            "token_f1", "prompt_tokens", "context_characters", "generation_latency_ms",
-            "provider", "model", "memory_retrieval_latency_ms", "retrieval_method",
+            "token_f1", "prompt_tokens", "prompt_token_budget", "context_characters",
+            "generation_latency_ms", "memory_retrieval_latency_ms", "retrieval_method",
+            "retrieval_recall_at_k", "retrieval_precision_at_k", "retrieval_mrr_at_k",
+            "provider", "model",
         ]
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
@@ -455,7 +508,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     # Official LongMemEval evaluator input: one JSONL per experimental arm.
     hypothesis_paths = []
     for history_size in history_sizes:
-        for arm in ("question_only", "recent_history", "external_memory"):
+        for arm in ("question_only", "recent_history", "long_context", "external_memory"):
             hypothesis_path = args.output_dir / (
                 f"hypotheses_{history_size}_{arm}_{run_id}.jsonl"
             )
@@ -487,6 +540,10 @@ def main() -> None:
     parser.add_argument("--device", default=None)
     parser.add_argument("--history-sizes", default="5,10,20,all")
     parser.add_argument("--max-prompt-tokens", type=int, default=4096)
+    parser.add_argument(
+        "--long-context-max-prompt-tokens", type=int, default=32768,
+        help="Separate larger context budget for the full-history baseline; must fit the reader model."
+    )
     parser.add_argument("--retrieval-k", type=int, default=30)
     parser.add_argument("--candidate-pool-size", type=int, default=100)
     parser.add_argument("--rerank-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
@@ -496,8 +553,16 @@ def main() -> None:
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--limit", type=int, default=5, help="Smoke test limit; use 0 for all questions")
     args = parser.parse_args()
-    if args.max_prompt_tokens < 128 or args.retrieval_k < 1 or args.candidate_pool_size < args.retrieval_k:
-        parser.error("Require max-prompt-tokens >=128 and candidate-pool-size >= retrieval-k >=1")
+    if (
+        args.max_prompt_tokens < 128
+        or args.long_context_max_prompt_tokens < args.max_prompt_tokens
+        or args.retrieval_k < 1
+        or args.candidate_pool_size < args.retrieval_k
+    ):
+        parser.error(
+            "Require long-context-max-prompt-tokens >= max-prompt-tokens >=128 "
+            "and candidate-pool-size >= retrieval-k >=1"
+        )
     if args.overlap < 0 or args.overlap >= args.chunk_size:
         parser.error("Require 0 <= overlap < chunk-size")
     if not args.history_sizes or any(
