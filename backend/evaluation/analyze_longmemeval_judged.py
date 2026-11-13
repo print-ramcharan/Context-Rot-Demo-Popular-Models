@@ -105,6 +105,22 @@ def main() -> None:
             "abstention_n": len(abstention_values),
         }
 
+    # Preserve the official per-question judgments in the same analysis JSON.
+    # These are the auditable observations used for all aggregate statistics.
+    summary["per_question"] = {
+        qid: {
+            "question_type": expected[qid].get("question_type"),
+            **{
+                arm: {
+                    "correct": judged[arm][qid]["correct"],
+                    "judge_model": "gpt-4o-2024-08-06",
+                }
+                for arm in ARMS
+            },
+        }
+        for qid in sorted(expected)
+    }
+
     all_tests = []
     for baseline in ("question_only", "recent_history", "long_context"):
         ids = sorted(expected)
