@@ -359,7 +359,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         # question. The recent-window parameter must never restrict retrieval.
         all_history = select_history(sessions, session_ids, session_dates, "all")
         source_session_by_memory_id = {
-            f"{sid}__occ{index}": sid for sid, _, _, _ in all_history
+            f"{sid}__occ{index}": sid for sid, _, _, index in all_history
         }
         date_by_memory_id = {
             f"{sid}__occ{index}": date for sid, date, _, index in all_history
