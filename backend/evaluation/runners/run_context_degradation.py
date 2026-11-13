@@ -297,8 +297,7 @@ def fit_context(
         if len(chosen) > 1:
             chosen.pop(0)  # discard oldest evidence first
             continue
-        header, sep, body = chosen[0].partition("\n")
-        if not sep or not body:
+        header, sep, body = chosen[0].partition("\n")        if not sep or not body:
             raise ValueError("Unable to fit the newest history unit within the token budget")
         keep = max(1, int(len(body) * 0.8))
         if keep >= len(body):
@@ -403,7 +402,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         )
         index_started = time.perf_counter()
         store = ConversationStore(str(store_path))
-        indexed_session_ids = []
+        indexed_memory_ids = []
         for sid, session_date, session, session_index in all_history:
             memory_id = f"{sid}__occ{session_index}"
             text = session_to_text(session)
@@ -417,7 +416,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     chunk_size=args.chunk_size,
                     overlap=args.overlap,
                 )
-                indexed_session_ids.append(sid)
+                indexed_memory_ids.append(memory_id)
         memory_indexing_latency_ms = (time.perf_counter() - index_started) * 1000.0
         memory_index_size_bytes = sum(
             path.stat().st_size for path in store_path.rglob("*") if path.is_file()
@@ -469,8 +468,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             if len(memory_units) >= args.retrieval_k:
                 break
 
-        if len(indexed_session_ids) != len(set(indexed_session_ids)):
-            raise RuntimeError("Duplicate source session IDs detected in memory index")
+        if len(indexed_memory_ids) != len(set(indexed_memory_ids)):
+            raise RuntimeError("Duplicate memory occurrence IDs detected in memory index")
 
         for history_size in history_sizes:
             selected = select_history(sessions, session_ids, session_dates, history_size)
@@ -597,8 +596,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                         if arm == "long_context" else None
                     ),
                     "retrieved_session_ids": retrieved_session_ids,
-                    "retrieved_session_ranking": [
-                        {"rank": rank, "source_session_id": sid,
+                    "retrieved_session_ranking": [                        {"rank": rank, "source_session_id": sid,
                          "score": retrieved_session_score_by_source_id.get(sid),
                          "is_gold_evidence": sid in gold_session_ids}
                         for rank, sid in enumerate(retrieved_session_ids, 1)
