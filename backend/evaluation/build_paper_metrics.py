@@ -119,6 +119,10 @@ def summarize_longmemeval(run: dict[str, Any], judged: dict[str, Any] | None) ->
         "dataset": run.get("dataset"),
         "dataset_sha256": run.get("dataset_sha256"),
         "n_questions": run.get("n_questions"),
+        "expected_questions": 500,
+        "coverage_status": (
+            "complete" if run.get("n_questions") == 500 else "partial_or_smoke_test"
+        ),
         "run_id_utc": run.get("run_id_utc"),
         "reader": {"provider": run.get("provider"), "model": run.get("model")},
         "retrieval_configuration": {
@@ -144,6 +148,13 @@ def summarize_longmemeval(run: dict[str, Any], judged: dict[str, Any] | None) ->
                 "required_protocol": "Official LongMemEval evaluate_qa.py with GPT-4o judge",
             }
         ),
+        "paper_readiness": {
+            "full_500_question_run": run.get("n_questions") == 500,
+            "official_judge_present": judged is not None,
+            "official_judge_full_coverage": (
+                judged is not None and judged.get("n_questions") == 500
+            ),
+        },
         "per_question_raw": per_question,
         "source_file": run.get("_source_file"),
     }
