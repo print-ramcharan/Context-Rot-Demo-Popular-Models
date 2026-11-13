@@ -90,7 +90,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         hits = store.retrieve_context(
             query=str(case["query"]),
             embedding_generator=embedder,
-            top_k=args.k,
+            top_k=args.k * 3,
             platform_filter=None,
             similarity_threshold=args.similarity_threshold,
         )
@@ -100,10 +100,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         # mapping back to gold memories without an LLM judge.
         ranked_ids = []
         for hit in hits:
-            marker = hit["text"].split("[memory_id:", 1)
-            memory_id = marker[1].split("]", 1)[0] if len(marker) == 2 else None
+            session_id = str(hit.get("session_id", ""))
+            memory_id = session_id.removeprefix("memory-")
             if memory_id and memory_id not in ranked_ids:
                 ranked_ids.append(memory_id)
+            if len(ranked_ids) >= args.k:
+                break
         relevant = set(map(str, case["relevant_memory_ids"]))
         retrieved_relevant = [mid for mid in ranked_ids if mid in relevant]
         first_rank = next((i + 1 for i, mid in enumerate(ranked_ids) if mid in relevant), None)
