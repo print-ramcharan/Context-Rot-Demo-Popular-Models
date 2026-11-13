@@ -27,10 +27,12 @@ completed command. Unrun experiments are not represented as results.
   the requested evaluation depth, rather than stopping at 100 chunks.
 - All configurations are evaluated at a shared 20-parent depth; any genuine
   shortfall is reported rather than padded.
-- B4 reranks candidate chunks before parent-document aggregation. It scores
-  title-plus-passage text, then retains the highest cross-encoder-scoring
-  passage for each parent and returns the top 20 unique parents. This avoids
-  discarding alternate passages before the cross-encoder can assess them.
+- B4 now reranks the original candidate chunks before parent-document
+  aggregation. It scores title-plus-passage text, then retains the highest
+  cross-encoder-scoring passage for each parent. A regression test verifies
+  that alternate passages from the same parent reach the cross-encoder.
+- Reranking latency is measured during the actual B4 pass rather than by
+  running a second, duplicate reranking pass for timing.
 - B4 now fails explicitly if the cross-encoder failed to load, rather than
   silently producing an unreranked result under the reranker label.
 - The per-query NDCG implementation uses graded gains and the complete query
@@ -45,6 +47,11 @@ completed command. Unrun experiments are not represented as results.
   cross-platform Recall@K, retrieval latency percentiles, and local store size.
 - LongMemEval evidence-session retrieval runner uses isolated per-question
   stores and reports gold session Recall@K/MRR and resource diagnostics.
+- A controlled context-degradation QA runner is implemented. It compares
+  question-only, recent-history, and retrieved external-memory conditions over
+  increasing history sizes, enforces a provider-tokenized prompt budget, and
+  saves per-question predictions, token F1/exact-match diagnostics, token use,
+  and generation latency. It has not yet been executed on the full benchmark.
 
 ## Required execution
 
@@ -82,11 +89,32 @@ python -m evaluation.runners.run_longmemeval_retrieval \
   --top-k 10
 ```
 
+## Newly implemented experiment — execution required
+
+From `backend/`, first run a small smoke test using a valid provider API key
+(or a locally available HuggingFace model):
+
+```bash
+python -m evaluation.runners.run_context_degradation \\
+  --dataset evaluation/data/longmemeval_s_cleaned.json \\
+  --output-dir evaluation/results/context_degradation \\
+  --history-sizes 5,10,20,all \\
+  --max-prompt-tokens 4096 \\
+  --limit 5
+```
+
+After inspecting the smoke-test outputs, run the full dataset with `--limit 0`.
+The runner uses the provider and model from `config.yaml` unless overridden.
+OpenAI requires `tiktoken` for exact prompt token counting. Ollama is currently
+rejected because this adapter does not have a model-matched tokenizer. Exact
+match and token F1 are diagnostics, not substitutes for the official
+LongMemEval LLM-judge score.
+
 ## Not completed
 
-No measured results currently exist for LongMemEval answer quality, Gemini
-answer generation, context-degradation curves, Longformer, advanced RAG
-framework comparisons, RAM profiling, production-scale concurrency, or
-end-to-end security controls. The memory harnesses are retrieval-only and do
-not establish improved generated answers. These remain limitations until
-their experiments are executed on appropriate datasets and infrastructure.
+The context-degradation runner is implemented but has not been executed; no
+answer-quality or context-degradation results exist yet. The official
+LongMemEval LLM-judge evaluation, Longformer/long-context model comparison,
+advanced RAG framework comparisons, RAM profiling, production-scale
+concurrency, and end-to-end security controls remain unimplemented or
+unmeasured. Do not claim these results until completed.
