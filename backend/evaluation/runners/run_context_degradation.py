@@ -195,32 +195,57 @@ def fit_context(
     counter: PromptTokenCounter,
     question_date: str = "",
 ) -> tuple[str, int, list[str]]:
-    """Pack whole evidence units, then verify the final prompt with the real tokenizer.
+    """Pack newest evidence first, truncating an oversized session instead of dropping all history.
 
-    A conservative character-based estimate avoids making a provider token-count
-    API call for every candidate. The final prompt is always checked with the
-    provider's actual tokenizer/count endpoint; units are removed until it fits.
+    Candidates are supplied oldest-to-newest. The returned context remains in
+    chronological order. The provider tokenizer verifies the final prompt.
     """
-    def conservative_estimate(text: str) -> int:
-        return math.ceil(len(text) / 3)
+    base_prompt = build_prompt(question, "", question_date)
+    base_estimate = math.ceil(len(base_prompt) / 3)
+    if base_estimate > max_prompt_tokens:
+        raise ValueError("Question and instructions exceed the configured prompt budget")
 
-    chosen: list[str] = []
-    for candidate in candidates:
-        trial = "\n\n".join(chosen + [candidate])
-        if conservative_estimate(build_prompt(question, trial, question_date)) <= max_prompt_tokens:
-            chosen.append(candidate)
+    chosen_newest_first: list[str] = []
+    used_chars = 0
+    char_budget = max(0, max_prompt_tokens * 3 - len(base_prompt))
+    for candidate in reversed(candidates):
+        separator_chars = 2 if chosen_newest_first else 0
+        remaining = char_budget - used_chars - separator_chars
+        if remaining <= 0:
+            break
+        if len(candidate) <= remaining:
+            chosen_newest_first.append(candidate)
+            used_chars += len(candidate) + separator_chars
+            continue
 
+        # Preserve the session identifier/date header and the newest part of
+        # an oversized session, rather than silently discarding the session.
+        header, sep, body = candidate.partition("\n")
+        if not sep:
+            header, body = "", candidate
+        header_cost = len(header) + (1 if sep else 0)
+        body_budget = max(0, remaining - header_cost)
+        if body_budget > 0:
+            partial = header + ("\n" if sep else "") + body[-body_budget:]
+            chosen_newest_first.append(partial)
+        break
+
+    chosen = list(reversed(chosen_newest_first))
     while True:
         context = "\n\n".join(chosen)
         actual_tokens = counter.count(build_prompt(question, context, question_date))
         if actual_tokens <= max_prompt_tokens:
             return context, actual_tokens, chosen
         if not chosen:
-            raise ValueError(
-                f"Question/instructions alone require {actual_tokens} tokens, "
-                f"exceeding budget {max_prompt_tokens}"
-            )
-        chosen.pop()
+            raise ValueError("Unable to fit prompt within the declared token budget")
+        if len(chosen) > 1:
+            chosen.pop(0)  # discard oldest evidence first
+            continue
+        header, sep, body = chosen[0].partition("\n")
+        if not sep or not body:
+            raise ValueError("Unable to fit the newest history unit within the token budget")
+        keep = max(1, int(len(body) * 0.8))
+        chosen[0] = header + "\n" + body[-keep:]
 
 
 def make_llm(provider: str | None, model: str | None, config_path: Path) -> LLMInference:
@@ -258,6 +283,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     history_sizes = args.history_sizes.split(",")
+    if len(set(history_sizes)) != len(history_sizes):
+        raise ValueError("--history-sizes must not contain duplicate windows")
     arms_per_question = 4
     planned_generation_calls = len(items) * len(history_sizes) * arms_per_question
     if planned_generation_calls > args.max_generation_calls:
@@ -301,102 +328,124 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         session_ids = list(map(str, item.get("haystack_session_ids", [])))
         session_dates = list(map(str, item.get("haystack_dates", [])))
 
+        # Build the memory corpus from the complete available history once per
+        # question. The recent-window parameter must never restrict retrieval.
+        all_history = select_history(sessions, session_ids, session_dates, "all")
+        source_session_by_memory_id = {
+            f"{sid}__occ{index}": sid for sid, _, _, _ in all_history
+        }
+        date_by_memory_id = {
+            f"{sid}__occ{index}": date for sid, date, _, index in all_history
+        }
+        store_path = (
+            args.output_dir / "stores" / run_id /
+            f"{item_index:04d}_{re.sub(r'[^A-Za-z0-9_-]', '_', qid)}_all"
+        )
+        store = ConversationStore(str(store_path))
+        indexed_session_ids = []
+        for sid, session_date, session, session_index in all_history:
+            memory_id = f"{sid}__occ{session_index}"
+            text = session_to_text(session)
+            if text:
+                store.store_conversation(
+                    platform="longmemeval",
+                    session_id=memory_id,
+                    prompt=f"LongMemEval session {sid}; date {session_date}",
+                    response=f"[session_date:{session_date}]\\n{text}",
+                    embedding_generator=embedder,
+                    chunk_size=args.chunk_size,
+                    overlap=args.overlap,
+                )
+                indexed_session_ids.append(sid)
+
+        memory_retriever = build_hybrid_memory_retriever(
+            store=store,
+            embedder=embedder,
+            reranker=reranker,
+            candidate_pool_size=args.candidate_pool_size,
+            retrieval_k=args.retrieval_k,
+        )
+        retrieval_started = time.perf_counter()
+        hits = memory_retriever.retrieve(
+            query=question,
+            k=args.candidate_pool_size,
+            threshold=0.0,
+            mode="hybrid",
+            use_cache=False,
+        )
+        retrieval_latency_ms = (time.perf_counter() - retrieval_started) * 1000.0
+        memory_units = []
+        seen_memory_ids = set()
+        retrieved_session_ids_ordered = []
+        seen_source_ids = set()
+        for hit in hits:
+            metadata = hit.get("metadata", {})
+            memory_id = str(metadata.get("session_id", ""))
+            if not memory_id or memory_id not in source_session_by_memory_id:
+                raise RuntimeError("Retrieved memory chunk has unknown session_id metadata")
+            if memory_id in seen_memory_ids:
+                continue
+            seen_memory_ids.add(memory_id)
+            source_sid = source_session_by_memory_id[memory_id]
+            if source_sid in seen_source_ids:
+                continue
+            seen_source_ids.add(source_sid)
+            retrieved_session_ids_ordered.append(source_sid)
+            session_date = date_by_memory_id[memory_id]
+            memory_units.append(
+                f"[session_id:{memory_id}] [source_session_id:{source_sid}] "
+                f"[session_date:{session_date}]\\n{hit.get('text', '')}"
+            )
+            if len(memory_units) >= args.retrieval_k:
+                break
+
+        if len(indexed_session_ids) != len(set(indexed_session_ids)):
+            raise RuntimeError("Duplicate source session IDs detected in memory index")
+
         for history_size in history_sizes:
             selected = select_history(sessions, session_ids, session_dates, history_size)
-            source_session_by_memory_id = {
-                f"{sid}__occ{index}": sid for sid, _, _, index in selected
-            }
-            date_by_memory_id = {
-                f"{sid}__occ{index}": date for sid, date, _, index in selected
-            }
-            store_path = (
-                args.output_dir / "stores" / run_id /
-                f"{item_index:04d}_{re.sub(r'[^A-Za-z0-9_-]', '_', qid)}_{history_size}"
-            )
-            store = ConversationStore(str(store_path))
-            for sid, session_date, session, session_index in selected:
-                memory_id = f"{sid}__occ{session_index}"
-                text = session_to_text(session)
-                if text:
-                    store.store_conversation(
-                        platform="longmemeval",
-                        session_id=memory_id,
-                        prompt=f"LongMemEval session {sid}; date {session_date}",
-                        response=f"[session_date:{session_date}]\\n{text}",
-                        embedding_generator=embedder,
-                        chunk_size=args.chunk_size,
-                        overlap=args.overlap,
-                    )
-
             recent_units = [
                 (
                     f"[session_id:{sid}__occ{session_index}] "
                     f"[source_session_id:{sid}] [session_date:{session_date}]\\n"
                     f"{session_to_text(session)}"
                 )
-                for sid, session_date, session, session_index in reversed(selected)
+                for sid, session_date, session, session_index in selected
                 if session_to_text(session)
             ]
-            memory_retriever = build_hybrid_memory_retriever(
-                store=store,
-                embedder=embedder,
-                reranker=reranker,
-                candidate_pool_size=args.candidate_pool_size,
-                retrieval_k=args.retrieval_k,
-            )
-            retrieval_started = time.perf_counter()
-            hits = memory_retriever.retrieve(
-                query=question,
-                k=args.candidate_pool_size,
-                threshold=0.0,
-                mode="hybrid",
-                use_cache=False,
-            )
-            retrieval_latency_ms = (time.perf_counter() - retrieval_started) * 1000.0
-            memory_units = []
-            seen_memory_ids = set()
-            retrieved_session_ids_ordered = []
-            seen_source_ids = set()
-            for hit in hits:
-                metadata = hit.get("metadata", {})
-                memory_id = str(metadata.get("session_id", ""))
-                if not memory_id or memory_id not in source_session_by_memory_id:
-                    raise RuntimeError("Retrieved memory chunk has unknown session_id metadata")
-                if memory_id in seen_memory_ids:
-                    continue
-                seen_memory_ids.add(memory_id)
-                source_sid = source_session_by_memory_id[memory_id]
-                if source_sid in seen_source_ids:
-                    continue
-                seen_source_ids.add(source_sid)
-                retrieved_session_ids_ordered.append(source_sid)
-                session_date = date_by_memory_id[memory_id]
-                memory_units.append(
-                    f"[session_id:{memory_id}] [source_session_id:{source_sid}] "
-                    f"[session_date:{session_date}]\\n{hit.get('text', '')}"
+            all_history_units = [
+                (
+                    f"[session_id:{sid}__occ{session_index}] "
+                    f"[source_session_id:{sid}] [session_date:{session_date}]\\n"
+                    f"{session_to_text(session)}"
                 )
-                if len(memory_units) >= args.retrieval_k:
-                    break
+                for sid, session_date, session, session_index in all_history
+                if session_to_text(session)
+            ]
 
             arms = {
                 "question_only": ([], args.max_prompt_tokens),
                 "recent_history": (recent_units, args.max_prompt_tokens),
-                "long_context": (recent_units, args.long_context_max_prompt_tokens),
+                "long_context": (all_history_units, args.long_context_max_prompt_tokens),
                 "external_memory": (memory_units, args.max_prompt_tokens),
             }
             for arm, (units, prompt_budget) in arms.items():
                 context, prompt_tokens, selected_units = fit_context(
                     question, units, prompt_budget, counter, question_date
                 )
-                prompt = build_prompt(question, context, question_date)
                 included_session_ids = []
                 for unit in selected_units:
-                    match = re.search(r"\[session_id:([^\]]+)\]", unit)
+                    match = re.search(r"\\[source_session_id:([^\\]]+)\\]", unit)
                     if match and match.group(1) not in included_session_ids:
                         included_session_ids.append(match.group(1))
+                if arm == "recent_history" and selected and not context.strip():
+                    raise RuntimeError(
+                        f"Recent-history context is empty for question {qid}; "
+                        "refusing to generate an invalid comparison."
+                    )
                 start = time.perf_counter()
                 generated = llm.generate(
-                    prompt,
+                    build_prompt(question, context, question_date),
                     max_tokens=args.max_output_tokens,
                     temperature=args.temperature,
                 )
@@ -414,8 +463,9 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     if arm == "external_memory" and gold_session_ids else None
                 )
                 retrieval_precision = (
-                    len(retrieved_relevant) / args.retrieval_k
-                    if arm == "external_memory" and retrieved_session_ids else None
+                    len(retrieved_relevant) / len(retrieved_session_ids)
+                    if arm == "external_memory" and retrieved_session_ids else
+                    (0.0 if arm == "external_memory" else None)
                 )
                 retrieval_mrr = None
                 if arm == "external_memory" and gold_session_ids:
@@ -424,11 +474,13 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                          if sid in gold_session_ids),
                         0.0,
                     )
-                row = {
+                rows.append({
                     "question_id": qid,
                     "question_type": item.get("question_type"),
                     "history_size": history_size,
                     "history_sessions_available": len(selected),
+                    "full_history_sessions_available": len(all_history),
+                    "full_history_sessions_indexed": len(indexed_session_ids),
                     "arm": arm,
                     "prediction": prediction,
                     "gold_answer": answer,
@@ -439,6 +491,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                     "context_characters": len(context),
                     "context_session_ids": included_session_ids,
                     "retrieved_session_ids": retrieved_session_ids,
+                    "retrieved_session_count": len(retrieved_session_ids),
                     "gold_session_count": len(gold_session_ids),
                     "retrieval_recall_at_k": retrieval_recall,
                     "retrieval_precision_at_k": retrieval_precision,
@@ -453,8 +506,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                         round(retrieval_latency_ms, 3) if arm == "external_memory" else None
                     ),
                     "retrieval_method": "BM25+FAISS+RRF+cross-encoder",
-                }
-                rows.append(row)
+                })
 
         if (item_index + 1) % 5 == 0:
             print(f"Processed {item_index + 1}/{len(items)} questions")
@@ -516,10 +568,16 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         "history_sizes": history_sizes,
         "max_prompt_tokens": args.max_prompt_tokens,
         "long_context_max_prompt_tokens": args.long_context_max_prompt_tokens,
+        "history_condition_definition": {
+            "recent_history": "Most recent N sessions, packed newest-first and presented chronologically; oversized sessions are tail-truncated to fit.",
+            "long_context": "All available sessions, packed newest-first and presented chronologically under the separately declared larger token budget.",
+            "external_memory": "Index and retrieval corpus built from every non-empty available session, independent of recent-history window.",
+            "question_only": "No conversation history."
+        },
         "long_context_baseline_note": (
-            "The long_context arm receives all selected history sessions up to its "
-            "separately declared token budget; for history_size=all this is the full "
-            "LongMemEval-S history subject to that budget."
+            "The long_context arm receives all available history sessions subject to "
+            "the separately declared token budget; the newest evidence is prioritized "
+            "if the complete history cannot fit."
         ),
         "retrieval_method": "BM25 + FAISS dense retrieval + RRF + cross-encoder reranking",
         "retrieval_candidate_pool_size": args.candidate_pool_size,
