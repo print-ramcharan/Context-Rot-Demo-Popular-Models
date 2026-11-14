@@ -166,7 +166,7 @@ class TextChunker:
                         if end >= len(block_words):
                             break
                         start += step
-                    current = block_words[-self.overlap:] if self.overlap else []
+                    current = []
                     continue
 
                 if current and len(current) + len(block_words) > self.chunk_size:
