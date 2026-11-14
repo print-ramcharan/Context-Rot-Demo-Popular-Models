@@ -21,15 +21,19 @@ _SECRET = os.getenv(
     "AUTH_SECRET_KEY",
     "local-development-only-change-this-secret-before-deployment",
 ).encode("utf-8")
-if APP_ENV == "production" and len(_SECRET) < 32:
-    raise RuntimeError("AUTH_SECRET_KEY must contain at least 32 bytes in production")
+if APP_ENV == "production" and (
+    len(_SECRET) < 32 or b"replace-this" in _SECRET
+):
+    raise RuntimeError("Set AUTH_SECRET_KEY to a unique random value of at least 32 bytes in production")
 USERNAME = os.getenv("DEMO_USERNAME", "demo")
 if APP_ENV == "development":
     PASSWORD = os.getenv("DEMO_PASSWORD", "123456")
 else:
     PASSWORD = os.getenv("DEMO_PASSWORD")
-    if not PASSWORD:
-        raise RuntimeError("DEMO_PASSWORD must be set outside development")
+    if not os.getenv("DEMO_USERNAME"):
+        raise RuntimeError("DEMO_USERNAME must be set outside development")
+    if not PASSWORD or len(PASSWORD) < 12:
+        raise RuntimeError("DEMO_PASSWORD must be at least 12 characters outside development")
 
 TOKEN_TTL_SECONDS = max(300, int(os.getenv("AUTH_TOKEN_TTL_SECONDS", "3600")))
 _PASSWORD_SALT = os.getenv("AUTH_PASSWORD_SALT", "context-rot-demo-v1").encode()
