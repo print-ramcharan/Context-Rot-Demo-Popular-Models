@@ -199,64 +199,107 @@ def context_quality_metrics(
     relevant: set[str],
     budget_tokens: Optional[int] = None,
 ) -> dict:
-    """Measure evidence retention and compression using source/chunk evidence units."""
-    def evidence_ids(items: list[dict]) -> set[str]:
+    """
+    Measure source/chunk retention and a whitespace-word compression proxy.
+
+    This function deliberately does not claim model-token counts: exact token
+    counts require the tokenizer for the generation model. Source labels also
+    cannot establish whether the actual supporting sentence survived.
+    """
+    def source_ids(items: list[dict]) -> set[str]:
         values = set()
         for item in items:
             metadata = item.get("metadata", {})
-            value = str(
-                item.get("source") or metadata.get("source")
-                or item.get("id") or item.get("chunk_id")
-                or metadata.get("chunk_index", "")
-            )
+            value = item.get("source") or metadata.get("source")
             if value:
-                values.add(value)
+                values.add(str(value))
         return values
 
-    before_ids = evidence_ids(before)
-    after_ids = evidence_ids(after)
-    relevant_before = before_ids & relevant if relevant else set()
-    relevant_after = after_ids & relevant if relevant else set()
-    before_tokens = len(" ".join(item.get("text", "") for item in before).split())
-    after_tokens = len(" ".join(item.get("text", "") for item in after).split())
-    retention = (
+    def chunk_ids(items: list[dict]) -> set[str]:
+        values = set()
+        for item in items:
+            metadata = item.get("metadata", {})
+            explicit = item.get("chunk_id") or item.get("id")
+            source = item.get("source") or metadata.get("source")
+            chunk_index = metadata.get("chunk_index")
+            if explicit:
+                values.add(str(explicit))
+            elif source is not None and chunk_index is not None:
+                values.add(f"{source}:{chunk_index}")
+        return values
+
+    before_sources = source_ids(before)
+    after_sources = source_ids(after)
+    relevant_sources = {
+        label.split(":", 1)[0] for label in relevant
+    } if relevant else set()
+    relevant_before = before_sources & relevant_sources
+    relevant_after = after_sources & relevant_sources
+
+    before_chunks = chunk_ids(before)
+    after_chunks = chunk_ids(after)
+    chunk_retention = (
+        len(before_chunks & after_chunks) / len(before_chunks)
+        if before_chunks else None
+    )
+    source_retention = (
         len(relevant_after) / len(relevant_before)
         if relevant_before else None
     )
-    reduction = (
-        (before_tokens - after_tokens) / before_tokens
-        if before_tokens else 0.0
+
+    before_words = len(" ".join(item.get("text", "") for item in before).split())
+    after_words = len(" ".join(item.get("text", "") for item in after).split())
+    word_reduction = (
+        (before_words - after_words) / before_words
+        if before_words else 0.0
     )
-    density_before = len(relevant_before) / before_tokens if before_tokens else 0.0
-    density_after = len(relevant_after) / after_tokens if after_tokens else 0.0
+    density_before = len(relevant_before) / before_words if before_words else 0.0
+    density_after = len(relevant_after) / after_words if after_words else 0.0
+
     return {
         "context_precision": (
-            len(relevant_after) / len(after_ids)
-            if relevant and after_ids else None
+            len(relevant_after) / len(after_sources)
+            if relevant and after_sources else None
         ),
         "context_recall": (
-            len(relevant_after) / len(relevant)
-            if relevant else None
+            len(relevant_after) / len(relevant_sources)
+            if relevant_sources else None
         ),
-        "evidence_retention": retention,
-        "evidence_loss_rate": 1.0 - retention if retention is not None else None,
-        "token_reduction": reduction,
-        "token_reduction_percent": reduction * 100,
-        "compression_ratio": before_tokens / after_tokens if after_tokens else None,
-        "evidence_density_before": density_before,
-        "evidence_density_after": density_after,
+        # Backward-compatible aliases, explicitly documented as source-level.
+        "evidence_retention": source_retention,
+        "evidence_retention_unit": "source_document",
+        "source_retention": source_retention,
+        "evidence_loss_rate": (
+            1.0 - source_retention if source_retention is not None else None
+        ),
+        "chunk_retention": chunk_retention,
+        "chunk_retention_unit": "chunk_identity",
+        "textual_evidence_retention": None,
+        "textual_evidence_retention_note": (
+            "Requires gold evidence spans or sentence IDs; source labels are insufficient."
+        ),
+        # These values are whitespace-word proxies, not model token counts.
+        "word_count_reduction": word_reduction,
+        "word_count_reduction_percent": word_reduction * 100,
+        "word_compression_ratio": (
+            before_words / after_words if after_words else None
+        ),
+        "evidence_density_before_per_word": density_before,
+        "evidence_density_after_per_word": density_after,
         "evidence_density_gain": (
             (density_after - density_before) / density_before
             if density_before else None
         ),
-        "budget_utilization": (
-            after_tokens / budget_tokens if budget_tokens else None
-        ),
-        "context_preservation_score": (
-            retention * reduction if retention is not None else None
-        ),
-        "tokens_before": before_tokens,
-        "tokens_after": after_tokens,
+        "word_count_before": before_words,
+        "word_count_after": after_words,
+        # Exact token metrics are unavailable here; never substitute word counts.
+        "token_reduction": None,
+        "token_reduction_percent": None,
+        "tokens_before": None,
+        "tokens_after": None,
+        "budget_utilization": None,
+        "context_preservation_score": None,
+        "token_count_status": "not_measured_no_model_tokenizer",
     }
 
 
