@@ -114,6 +114,7 @@ class SemanticRetriever:
                  dense_k: int = 30,
                  bm25_k: int = 30,
                  alpha: float = 0.65,
+                 rrf_k: int = 60,
                  enable_rerank: bool = False,
                  rerank_top_n: int = 6,
                  rerank_candidate_pool: int = 30,
@@ -136,6 +137,7 @@ class SemanticRetriever:
         self.dense_k = dense_k
         self.bm25_k = bm25_k
         self.alpha = alpha
+        self.rrf_k = max(1, int(rrf_k))
         self.enable_rerank = enable_rerank
         self.rerank_top_n = rerank_top_n
         self.rerank_candidate_pool = rerank_candidate_pool
@@ -211,9 +213,9 @@ class SemanticRetriever:
         for index in set(dense_by_index) | set(bm25_by_index):
             score = 0.0
             if index in dense_by_index:
-                score += 1.0 / (60 + dense_by_index[index]["rank"])
+                score += 1.0 / (self.rrf_k + dense_by_index[index]["rank"])
             if index in bm25_by_index:
-                score += 1.0 / (60 + bm25_by_index[index]["rank"])
+                score += 1.0 / (self.rrf_k + bm25_by_index[index]["rank"])
             rrf_scores[index] = score
         # Stable index tie-break makes equal-score RRF rankings reproducible.
         rrf_entries = sorted(
@@ -285,7 +287,7 @@ class SemanticRetriever:
             "configuration": {
                 "dense_k": self.dense_k,
                 "bm25_k": self.bm25_k,
-                "rrf_k": 60,
+                "rrf_k": self.rrf_k,
                 "rrf_pool": len(rrf_entries),
                 "reranker_limit": self.rerank_candidate_pool,
                 "evaluation_k": list(evaluation_k),
@@ -462,16 +464,16 @@ class SemanticRetriever:
         # --- Reciprocal Rank Fusion ---
         # RRF_K is the standard constant (typically 60) that prevents
         # top-ranked documents from dominating the fusion score.
-        RRF_K = 60
+        RRF_K = self.rrf_k
         all_candidate_ids = set(dense_rank_map.keys()) | set(bm25_rank_map.keys())
 
         rrf_scores = {}
         for idx in all_candidate_ids:
             rrf_scores[idx] = 0.0
             if idx in dense_rank_map:
-                rrf_scores[idx] += 1.0 / (RRF_K + dense_rank_map[idx])
+                rrf_scores[idx] += 1.0 / (self.rrf_k + dense_rank_map[idx])
             if idx in bm25_rank_map:
-                rrf_scores[idx] += 1.0 / (RRF_K + bm25_rank_map[idx])
+                rrf_scores[idx] += 1.0 / (self.rrf_k + bm25_rank_map[idx])
 
         # Stable index tie-break makes equal-score RRF rankings reproducible.
         ranked = sorted(rrf_scores.items(), key=lambda item: (-item[1], item[0]))
