@@ -1,155 +1,187 @@
 import re
-import uuid
+import hashlib
+
+
+_HEADING_RE = re.compile(
+    r"^\s*(?:#{1,6}\s+.+|\d+(?:\.\d+)*[.)]?\s+.{2,100}|[A-Z][A-Z0-9 ,:/()&-]{3,80})\s*$"
+)
+
 
 class TextChunker:
     """
-    Splits text into overlapping chunks for embedding and retrieval.
+    Structure-aware chunker.
+
+    Headings and paragraph boundaries are preserved. Child chunks are sized by
+    approximate word count (portable without a model-specific tokenizer), carry
+    their section path and stable parent identifier, and retain source offsets.
     """
-    
-    def __init__(self, chunk_size=220, overlap=30):
-        """
-        Initialize chunker with size and overlap parameters.
-        
-        Args:
-            chunk_size (int): Number of words per chunk
-            overlap (int): Number of overlapping words between chunks
-        """
+
+    def __init__(self, chunk_size=350, overlap=50):
         if not isinstance(chunk_size, int) or chunk_size <= 0:
             raise ValueError("chunk_size must be a positive integer")
         if not isinstance(overlap, int) or overlap < 0 or overlap >= chunk_size:
             raise ValueError("overlap must be an integer in [0, chunk_size)")
         self.chunk_size = chunk_size
         self.overlap = overlap
-    
-    def _normalize_and_split(self, text: str) -> list[str]:
-        """Normalize whitespace and split into words."""
-        if not text or not text.strip():
-            return []
-        text = " ".join(text.split())
-        return text.split()
+
+    def _sections(self, text: str) -> list[dict]:
+        lines = text.splitlines(keepends=True)
+        sections = []
+        headings = []
+        current_blocks = []
+        offset = 0
+
+        def flush():
+            nonlocal current_blocks
+            if current_blocks:
+                body_start = current_blocks[0][1]
+                body_end = current_blocks[-1][2]
+                sections.append({
+                    "section_path": list(headings),
+                    "blocks": current_blocks,
+                    "start": body_start,
+                    "end": body_end,
+                })
+                current_blocks = []
+
+        paragraph_lines = []
+        paragraph_start = None
+        paragraph_end = None
+
+        def flush_paragraph():
+            nonlocal paragraph_lines, paragraph_start, paragraph_end
+            if paragraph_lines:
+                value = "".join(paragraph_lines).strip()
+                if value:
+                    # Preserve original boundaries while excluding surrounding whitespace.
+                    left_trim = len("".join(paragraph_lines)) - len("".join(paragraph_lines).lstrip())
+                    right_trimmed = "".join(paragraph_lines).rstrip()
+                    start = paragraph_start + left_trim
+                    end = paragraph_start + len(right_trimmed)
+                    current_blocks.append((value, start, end))
+            paragraph_lines = []
+            paragraph_start = None
+            paragraph_end = None
+
+        for line in lines:
+            stripped = line.strip()
+            line_start = offset
+            line_end = offset + len(line)
+            offset = line_end
+
+            if not stripped:
+                flush_paragraph()
+                continue
+
+            if _HEADING_RE.match(stripped):
+                flush_paragraph()
+                flush()
+                heading = re.sub(r"^#{1,6}\s+", "", stripped).strip()
+                if stripped.startswith("#"):
+                    level = len(stripped) - len(stripped.lstrip("#"))
+                    headings[:] = headings[:max(0, level - 1)]
+                elif re.match(r"^\d", stripped):
+                    level = max(1, stripped.split()[0].count(".") + 1)
+                    headings[:] = headings[:max(0, level - 1)]
+                else:
+                    headings[:] = headings[:1]
+                headings.append(heading)
+                continue
+
+            if paragraph_start is None:
+                paragraph_start = line_start
+            paragraph_lines.append(line)
+            paragraph_end = line_end
+
+        flush_paragraph()
+        flush()
+        if not sections and text.strip():
+            start = len(text) - len(text.lstrip())
+            end = len(text.rstrip())
+            sections = [{
+                "section_path": [],
+                "blocks": [(text[start:end], start, end)],
+                "start": start,
+                "end": end,
+            }]
+        return sections
 
     def chunk_document(self, text: str) -> list[dict]:
-        """
-        Split text into word-based chunks with overlap, returning chunk metadata.
-
-        Returns:
-            list[dict]: [{'text', 'offset', 'length', 'word_count', 'chunk_index'}]
-        """
-        # Preserve offsets into the original, unnormalized source text.
-        spans = [(match.group(0), match.start(), match.end())
-                 for match in re.finditer(r"\S+", text or "")]
-        if not spans:
-            return []
-
-        chunks = []
-        start = 0
-        chunk_index = 0
-        while start < len(spans):
-            end = min(start + self.chunk_size, len(spans))
-            selected = spans[start:end]
-            chunk_text = " ".join(item[0] for item in selected)
-            offset = selected[0][1]
-            source_end = selected[-1][2]
-            chunks.append({
-                "text": chunk_text,
-                "offset": offset,
-                "length": source_end - offset,
-                "word_count": len(selected),
-                "chunk_index": chunk_index
-            })
-            chunk_index += 1
-
-            if end >= len(spans):
-                break
-            start += (self.chunk_size - self.overlap)
-
-        return chunks
-    
-    def chunk_by_words(self, text: str) -> list[str]:
-        """
-        Split text into word-based chunks with overlap.
-        
-        Args:
-            text (str): Input text to chunk
-            
-        Returns:
-            list[str]: List of text chunks
-        """
-        words = self._normalize_and_split(text)
-        if not words:
-            return []
-        if len(words) <= self.chunk_size:
-            return [" ".join(words)]
-
-        chunks = []
-        start = 0
-        while start < len(words):
-            end = start + self.chunk_size
-            chunk_words = words[start:end]
-            chunks.append(" ".join(chunk_words))
-
-            if end >= len(spans):
-                break
-
-            start += (self.chunk_size - self.overlap)
-
-        return chunks
-    
-    def chunk_by_sentences(self, text: str, max_words=300) -> list[str]:
-        """
-        Split text into chunks at sentence boundaries.
-        Combines sentences until reaching max_words limit.
-        
-        Args:
-            text (str): Input text to chunk
-            max_words (int): Maximum words per chunk
-            
-        Returns:
-            list[str]: List of text chunks
-        """
         if not text or not text.strip():
             return []
 
-        # Simple sentence splitter (can be improved with nltk/spacy)
-        sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-        
         chunks = []
-        current_chunk = []
-        current_word_count = 0
-        
-        for sentence in sentences:
-            sentence_words = sentence.split()
-            sentence_word_count = len(sentence_words)
-            
-            if current_word_count + sentence_word_count > max_words and current_chunk:
-                chunks.append(" ".join(current_chunk))
-                current_chunk = []
-                current_word_count = 0
-            
-            current_chunk.append(sentence)
-            current_word_count += sentence_word_count
-            
-        if current_chunk:
-            chunks.append(" ".join(current_chunk))
-            
+        chunk_index = 0
+        step = self.chunk_size - self.overlap
+
+        for section_index, section in enumerate(self._sections(text)):
+            blocks = section["blocks"]
+            if not blocks:
+                continue
+
+            # Build a word stream with exact source spans, but only split at
+            # paragraph boundaries unless a single paragraph exceeds the target.
+            words = []
+            for block_text, block_start, _ in blocks:
+                for match in re.finditer(r"\S+", block_text):
+                    words.append((match.group(0), block_start + match.start(), block_start + match.end()))
+
+            if not words:
+                continue
+
+            parent_material = "\n".join(block[0] for block in blocks)
+            parent_id = hashlib.sha256(
+                ("/".join(section["section_path"]) + parent_material).encode("utf-8")
+            ).hexdigest()[:20]
+
+            start = 0
+            while start < len(words):
+                end = min(start + self.chunk_size, len(words))
+                selected = words[start:end]
+                source_start = selected[0][1]
+                source_end = selected[-1][2]
+                source_text = text[source_start:source_end].strip()
+                if source_text:
+                    chunks.append({
+                        "text": source_text,
+                        "offset": source_start,
+                        "length": source_end - source_start,
+                        "word_count": len(selected),
+                        "chunk_index": chunk_index,
+                        "parent_id": parent_id,
+                        "section_path": list(section["section_path"]),
+                        "section_index": section_index,
+                    })
+                    chunk_index += 1
+                if end >= len(words):
+                    break
+                start += step
+
         return chunks
-    
+
+    def chunk_by_words(self, text: str) -> list[str]:
+        return [item["text"] for item in self.chunk_document(text)]
+
+    def chunk_by_sentences(self, text: str, max_words=300) -> list[str]:
+        if not text or not text.strip():
+            return []
+        sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+        chunks, current, count = [], [], 0
+        for sentence in sentences:
+            size = len(sentence.split())
+            if current and count + size > max_words:
+                chunks.append(" ".join(current))
+                current, count = [], 0
+            current.append(sentence)
+            count += size
+        if current:
+            chunks.append(" ".join(current))
+        return chunks
+
     def get_chunk_metadata(self, chunks: list[str]) -> list[dict]:
-        """
-        Generate metadata for each chunk including position, length, and ID.
-        
-        Args:
-            chunks (list[str]): List of text chunks
-            
-        Returns:
-            list[dict]: Metadata for each chunk
-        """
-        metadata = []
-        for i, chunk in enumerate(chunks):
-            metadata.append({
-                'chunk_id': str(uuid.uuid4()),
-                'position': i,
-                'word_count': len(chunk.split()),
-                'char_count': len(chunk)
-            })
-        return metadata
+        return [{
+            "chunk_id": hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
+            "position": index,
+            "word_count": len(chunk.split()),
+            "char_count": len(chunk),
+        } for index, chunk in enumerate(chunks)]
