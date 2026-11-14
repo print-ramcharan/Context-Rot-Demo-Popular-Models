@@ -646,6 +646,8 @@ def _write_run_metadata(cfg: Dict[str, Any], results_dir: Path, repo_root: Path)
             digest.update(path.read_bytes())
         dataset_checksums[dataset] = digest.hexdigest()
     metadata = {
+        "benchmark_protocol_version": "paper-b1-b4-mapping-v2",
+        "configuration_mapping": CONFIGS,
         "git_commit": _git_commit(repo_root),
         "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
         "config": cfg,
