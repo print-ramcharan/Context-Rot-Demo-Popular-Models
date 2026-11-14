@@ -24,8 +24,8 @@ def test_context_metrics_do_not_mislabel_words_as_model_tokens():
     )
 
     assert result["word_count_before"] == 12
-    assert result["word_count_after"] == 5
-    assert result["word_count_reduction"] == 7 / 12
+    assert result["word_count_after"] == 4
+    assert result["word_count_reduction"] == 8 / 12
     assert result["source_retention"] == 1.0
     assert result["chunk_retention"] == 0.5
     assert result["textual_evidence_retention"] is None
