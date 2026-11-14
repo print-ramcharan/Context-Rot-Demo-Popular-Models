@@ -38,8 +38,12 @@ class MetricsCollector:
                 "count": len(values),
                 "avg_ms": statistics.mean(values),
                 "p50_ms": self._percentile(values, 0.5),
+                "p75_ms": self._percentile(values, 0.75),
+                "p90_ms": self._percentile(values, 0.90),
                 "p95_ms": self._percentile(values, 0.95),
                 "p99_ms": self._percentile(values, 0.99),
+                "min_ms": min(values),
+                "std_dev_ms": statistics.stdev(values) if len(values) > 1 else 0.0,
                 "max_ms": max(values)
             }
         return {
@@ -50,6 +54,14 @@ class MetricsCollector:
 
 def _tokens(text: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+
+def _identifier_matches_relevance(identifier: str, relevant: set[str]) -> bool:
+    """Match either chunk-level labels or source-level labels."""
+    if identifier in relevant:
+        return True
+    source = identifier.split(":", 1)[0]
+    return source in relevant
 
 
 def rank_metrics(retrieved: list[dict], relevant: set[str]) -> dict:
@@ -63,7 +75,10 @@ def rank_metrics(retrieved: list[dict], relevant: set[str]) -> dict:
         )
         if value and value not in ranked:
             ranked.append(value)
-    hits = [index for index, value in enumerate(ranked, start=1) if value in relevant]
+    hits = [
+        index for index, value in enumerate(ranked, start=1)
+        if _identifier_matches_relevance(value, relevant)
+    ]
     return {
         "hit_rate": float(bool(hits)),
         "precision_at_k": len(hits) / len(ranked) if ranked else 0.0,
@@ -115,16 +130,33 @@ def text_metrics(answer: str, expected: str, context: str) -> dict:
 
 def advanced_ranking_metrics(retrieved: list[dict], relevant: set[str], k: int) -> dict:
     """Return binary relevance metrics with a mathematically bounded nDCG."""
-    identifiers = []
+    raw_identifiers = []
     for item in retrieved[:k]:
         metadata = item.get("metadata", {})
         identifier = str(
             item.get("source") or metadata.get("source")
             or item.get("id") or item.get("chunk_id", "")
         )
-        if identifier and identifier not in identifiers:
-            identifiers.append(identifier)
-    relevance = [int(identifier in relevant) for identifier in identifiers]
+        if identifier and identifier not in raw_identifiers:
+            raw_identifiers.append(identifier)
+    exact_label_match = any(identifier in relevant for identifier in raw_identifiers)
+    source_label_match = any(
+        identifier.split(":", 1)[0] in relevant
+        for identifier in raw_identifiers
+    )
+    source_level_labels = source_label_match and not exact_label_match
+    identifiers = []
+    for identifier in raw_identifiers:
+        metric_identifier = (
+            identifier.split(":", 1)[0]
+            if source_level_labels else identifier
+        )
+        if metric_identifier not in identifiers:
+            identifiers.append(metric_identifier)
+    relevance = [
+        int(_identifier_matches_relevance(identifier, relevant))
+        for identifier in identifiers
+    ]
     relevant_found = sum(relevance)
     precision_values = []
     hits = 0
@@ -140,15 +172,13 @@ def advanced_ranking_metrics(retrieved: list[dict], relevant: set[str], k: int) 
         (2 ** value - 1) / math.log2(rank + 1)
         for rank, value in enumerate(relevance, start=1)
     )
-    ideal = sorted(relevance, reverse=True)
+    ideal = [1] * min(len(relevant), k)
     idcg = sum(
         (2 ** value - 1) / math.log2(rank + 1)
         for rank, value in enumerate(ideal, start=1)
     )
     return {
-        "precision_at_k": (
-            relevant_found / len(identifiers) if identifiers else 0.0
-        ),
+        "precision_at_k": relevant_found / k if k else 0.0,
         "recall_at_k": relevant_found / len(relevant) if relevant else None,
         "hit_rate_at_k": float(bool(relevant_found)) if relevant else None,
         "mrr_at_k": next(

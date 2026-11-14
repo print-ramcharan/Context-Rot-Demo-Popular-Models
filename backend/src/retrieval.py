@@ -147,6 +147,173 @@ class SemanticRetriever:
     def set_reranker(self, reranker):
         self.reranker = reranker
 
+    @staticmethod
+    def _trace_chunk_id(index: int, metadata: dict) -> str:
+        source = metadata.get("source", "index")
+        chunk_index = metadata.get("chunk_index", index)
+        return f"{source}:{chunk_index}"
+
+    def retrieve_with_trace(
+        self,
+        query: str,
+        evaluation_k: tuple[int, ...] = (5, 10, 20),
+        threshold: float = 0.0,
+    ) -> tuple[list[dict], dict]:
+        """Run uncached hybrid retrieval and retain every measurable stage."""
+        import concurrent.futures
+
+        max_k = max(evaluation_k)
+        dense_k = min(self.dense_k, self.vector_store.index.ntotal or 0)
+        bm25_k = self.bm25_k
+        query_embedding_start = time.perf_counter()
+        query_embedding = self.embedding_generator.embed_text(query)
+        embedding_ms = (time.perf_counter() - query_embedding_start) * 1000
+
+        faiss_start = time.perf_counter()
+        dense_results = self.vector_store.search(query_embedding, k=dense_k or max_k)
+        faiss_ms = (time.perf_counter() - faiss_start) * 1000
+
+        bm25_start = time.perf_counter()
+        self.build_lexical_index()
+        bm25_scores = self._bm25_index.score(query) if self._bm25_index else []
+        positive_bm25 = [
+            (idx, score) for idx, score in enumerate(bm25_scores) if score > 0
+        ]
+        positive_bm25.sort(key=lambda pair: pair[1], reverse=True)
+        positive_bm25 = positive_bm25[:bm25_k]
+        bm25_ms = (time.perf_counter() - bm25_start) * 1000
+
+        dense_entries = []
+        for rank, index in enumerate(dense_results["indices"], start=1):
+            if index < 0:
+                continue
+            metadata = self.vector_store.metadata[index]
+            dense_entries.append({
+                "chunk_id": self._trace_chunk_id(index, metadata),
+                "index": int(index),
+                "rank": rank,
+                "score": float(dense_results["distances"][rank - 1]),
+            })
+        bm25_entries = [{
+            "chunk_id": self._trace_chunk_id(index, self.vector_store.metadata[index]),
+            "index": int(index),
+            "rank": rank,
+            "score": float(score),
+        } for rank, (index, score) in enumerate(positive_bm25, start=1)]
+
+        rrf_start = time.perf_counter()
+        rrf_scores = {}
+        dense_by_index = {entry["index"]: entry for entry in dense_entries}
+        bm25_by_index = {entry["index"]: entry for entry in bm25_entries}
+        for index in set(dense_by_index) | set(bm25_by_index):
+            score = 0.0
+            if index in dense_by_index:
+                score += 1.0 / (60 + dense_by_index[index]["rank"])
+            if index in bm25_by_index:
+                score += 1.0 / (60 + bm25_by_index[index]["rank"])
+            rrf_scores[index] = score
+        rrf_entries = sorted(
+            rrf_scores.items(), key=lambda item: item[1], reverse=True
+        )[: max(self.dense_k + self.bm25_k, max_k)]
+        rrf_ms = (time.perf_counter() - rrf_start) * 1000
+
+        candidate_items = []
+        for rank, (index, score) in enumerate(rrf_entries, start=1):
+            metadata = self.vector_store.metadata[index]
+            dense_score = dense_by_index.get(index, {}).get("score")
+            if threshold > 0 and dense_score is not None and dense_score < threshold:
+                continue
+            candidate_items.append({
+                "text": self.vector_store.chunks[index],
+                "score": float(score),
+                "metadata": metadata,
+                "rank": rank,
+                "dense_score": dense_score,
+                "bm25_score": bm25_by_index.get(index, {}).get("score", 0.0),
+            })
+
+        rerank_input = candidate_items[:max(self.rerank_candidate_pool, max_k)]
+        rerank_start = time.perf_counter()
+        if self.enable_rerank and self.reranker and rerank_input:
+            final_items = self.reranker.rerank(
+                query, rerank_input, top_n=max_k
+            )
+        else:
+            final_items = rerank_input[:max_k]
+        rerank_ms = (time.perf_counter() - rerank_start) * 1000
+        final_items = final_items[:max_k]
+
+        def trace_item(item: dict, score_key: str = "score") -> dict:
+            metadata = item.get("metadata", {})
+            return {
+                "chunk_id": self._trace_chunk_id(
+                    metadata.get("chunk_index", item.get("rank", 0)), metadata
+                ),
+                "score": item.get(score_key),
+                "rank": item.get("rank"),
+                "metadata": metadata,
+            }
+
+        reranked_ids = [
+            trace_item(item)["chunk_id"] for item in final_items
+        ]
+        input_ids = [
+            trace_item(item)["chunk_id"] for item in rerank_input
+        ]
+        trace = {
+            "configuration": {
+                "dense_k": self.dense_k,
+                "bm25_k": self.bm25_k,
+                "rrf_k": 60,
+                "rrf_pool": len(rrf_entries),
+                "reranker_limit": self.rerank_candidate_pool,
+                "evaluation_k": list(evaluation_k),
+            },
+            "stages": {
+                "embedding": {
+                    "latency_ms": embedding_ms,
+                    "query_vector_dimensions": len(query_embedding),
+                },
+                "bm25": {
+                    "retrieved_chunk_ids": [entry["chunk_id"] for entry in bm25_entries],
+                    "scores": [entry["score"] for entry in bm25_entries],
+                    "ranks": [entry["rank"] for entry in bm25_entries],
+                    "latency_ms": bm25_ms,
+                },
+                "dense": {
+                    "retrieved_chunk_ids": [entry["chunk_id"] for entry in dense_entries],
+                    "scores": [entry["score"] for entry in dense_entries],
+                    "ranks": [entry["rank"] for entry in dense_entries],
+                    "latency_ms": faiss_ms,
+                },
+                "rrf": {
+                    "candidate_chunk_ids": [
+                        self._trace_chunk_id(index, self.vector_store.metadata[index])
+                        for index, _ in rrf_entries
+                    ],
+                    "rrf_scores": [score for _, score in rrf_entries],
+                    "latency_ms": rrf_ms,
+                },
+                "reranker": {
+                    "input_chunk_ids": input_ids,
+                    "scored_chunk_ids": (
+                        self.reranker.last_trace.get("scored_chunk_ids", input_ids)
+                        if self.reranker else input_ids
+                    ),
+                    "reranked_chunk_ids": reranked_ids,
+                    "discarded_chunk_ids": [
+                        chunk_id for chunk_id in input_ids if chunk_id not in reranked_ids
+                    ],
+                    "raw_scores": (
+                        self.reranker.last_trace.get("raw_scores", [])
+                        if self.reranker else []
+                    ),
+                    "latency_ms": rerank_ms,
+                },
+            },
+        }
+        return final_items, trace
+
     def invalidate_cache(self):
         self._cache_generation += 1
         self._query_cache.clear()
@@ -245,10 +412,10 @@ class SemanticRetriever:
         # Build dense rank and score maps
         dense_rank_map = {}
         dense_score_map = {}
-        for rank, idx in enumerate(dense_results['indices']):
+        for rank, idx in enumerate(dense_results['indices'], start=1):
             if idx != -1:
                 dense_rank_map[idx] = rank
-                dense_score_map[idx] = dense_results['distances'][rank]
+                dense_score_map[idx] = dense_results['distances'][rank - 1]
 
         # Build BM25 rank map
         bm25_rank_map = {}
@@ -258,23 +425,25 @@ class SemanticRetriever:
                 key=lambda i: bm25_scores_list[i],
                 reverse=True
             )
-            for rank, idx in enumerate(bm25_ranked_indices[:self.bm25_k]):
-                if bm25_scores_list[idx] > 0:
-                    bm25_rank_map[idx] = rank
+            positive_indices = [
+                idx for idx in bm25_ranked_indices if bm25_scores_list[idx] > 0
+            ][:self.bm25_k]
+            for rank, idx in enumerate(positive_indices, start=1):
+                bm25_rank_map[idx] = rank
 
         # --- Reciprocal Rank Fusion ---
         # RRF_K is the standard constant (typically 60) that prevents
         # top-ranked documents from dominating the fusion score.
         RRF_K = 60
-        MISSING_RANK = max(self.dense_k, self.bm25_k) + 1
-
         all_candidate_ids = set(dense_rank_map.keys()) | set(bm25_rank_map.keys())
 
         rrf_scores = {}
         for idx in all_candidate_ids:
-            d_rank = dense_rank_map.get(idx, MISSING_RANK)
-            b_rank = bm25_rank_map.get(idx, MISSING_RANK)
-            rrf_scores[idx] = (1.0 / (RRF_K + d_rank)) + (1.0 / (RRF_K + b_rank))
+            rrf_scores[idx] = 0.0
+            if idx in dense_rank_map:
+                rrf_scores[idx] += 1.0 / (RRF_K + dense_rank_map[idx])
+            if idx in bm25_rank_map:
+                rrf_scores[idx] += 1.0 / (RRF_K + bm25_rank_map[idx])
 
         ranked = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
 

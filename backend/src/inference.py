@@ -255,7 +255,7 @@ class LLMInference:
 
         self.client = genai.Client(api_key=api_key.strip())
 
-    def generate(self, prompt: str, max_tokens: int = 768,
+    def generate(self, prompt: str, max_tokens: int = 256,
                  temperature: float = 0.7) -> Dict[str, Any]:
         """
         Generate response from LLM.
@@ -369,12 +369,15 @@ class LLMInference:
     def _generate_openai(self, prompt: str, max_tokens: int, 
                         temperature: float) -> dict:
         """Generate using OpenAI API."""
-        response = self.client.chat.completions.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        request = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if self.provider == "openrouter" and self.config.get("reasoning"):
+            request["extra_body"] = {"reasoning": self.config["reasoning"]}
+        response = self.client.chat.completions.create(**request)
         
         return {
             'response': response.choices[0].message.content,
@@ -421,7 +424,7 @@ class LLMInference:
             },
         }
 
-    async def stream_generate(self, prompt: str, max_tokens: int = 768,
+    async def stream_generate(self, prompt: str, max_tokens: int = 256,
                         temperature: float = 0.7):
         """
         Asynchronous generator yielding response chunks from LLM.

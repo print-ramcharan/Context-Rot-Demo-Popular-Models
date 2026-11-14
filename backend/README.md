@@ -4,7 +4,7 @@ This project implements an external memory system for Large Language Models to m
 
 ## Project Structure
 
-- `backend/`: Python-based external memory system using FAISS and Ollama/Gemini.
+- `backend/`: Python-based external memory system using FAISS and OpenRouter.
   - `api.py`: FastAPI entrypoint.
   - `chunker.py`: Document chunking utilities.
   - `vector_store.py`: Vector store helpers (updated with new method).
@@ -23,6 +23,10 @@ fastapi dev api.py
 ### Environment Variables
 
 Make sure required API keys are set in your environment (see backend/README.md for exact names).
+
+The default provider is OpenRouter using the paid `openai/gpt-4o-mini` model.
+Set `OPENROUTER_API_KEY` in `backend/.env`; another OpenRouter model can be
+selected in `backend/config.yaml`.
 
 
 

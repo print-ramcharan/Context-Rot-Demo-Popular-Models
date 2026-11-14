@@ -11,6 +11,7 @@ class CrossEncoderReranker:
     def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
         self.model_name = model_name
         self.model = None
+        self.last_trace = {}
         self._load_model()
 
     def _load_model(self):
@@ -29,12 +30,21 @@ class CrossEncoderReranker:
             for c in candidates
         ]
         scores = self.model.predict(pairs)
+        self.last_trace = {
+            "scored_chunk_ids": [
+                f"{candidate.get('metadata', {}).get('source', 'index')}:"
+                f"{candidate.get('metadata', {}).get('chunk_index', index)}"
+                for index, candidate in enumerate(candidates)
+            ],
+            "raw_scores": [float(score) for score in scores],
+        }
 
         reranked = []
-        for candidate, score in zip(candidates, scores):
+        for original_rank, (candidate, score) in enumerate(zip(candidates, scores), start=1):
             updated = dict(candidate)
             updated["original_score"] = candidate.get("score")
             updated["rerank_score"] = float(score)
+            updated["original_rank"] = original_rank
             updated["score"] = float(score)
             reranked.append(updated)
 

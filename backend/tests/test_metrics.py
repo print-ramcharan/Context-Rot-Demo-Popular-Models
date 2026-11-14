@@ -6,6 +6,7 @@ validation set for the evaluation harness.
 
 import unittest
 
+from src.utils.metrics import advanced_ranking_metrics, text_metrics
 from evaluation.metrics.retrieval_metrics import (
     compute_query_metrics,
     ndcg_at_k,
@@ -86,6 +87,36 @@ class TestRetrievalMetrics(unittest.TestCase):
         self.assertAlmostEqual(metrics["recall@10"], 1.0, places=4)
         self.assertAlmostEqual(metrics["precision@10"], 0.3, places=4)
         self.assertAlmostEqual(metrics["mrr@10"], 1.0, places=4)
+
+    def test_advanced_metrics_match_source_labels_and_use_requested_cutoff(self):
+        retrieved = [
+            {"chunk_id": "paper-a.txt:0"},
+            {"chunk_id": "paper-b.txt:0"},
+            {"chunk_id": "paper-a.txt:1"},
+        ]
+        metrics = advanced_ranking_metrics(
+            retrieved,
+            {"paper-a.txt", "paper-c.txt"},
+            5,
+        )
+        self.assertEqual(metrics["retrieved_count"], 2)
+        self.assertEqual(metrics["relevant_count"], 2)
+        self.assertAlmostEqual(metrics["recall_at_k"], 0.5)
+        self.assertAlmostEqual(metrics["precision_at_k"], 0.2)
+        self.assertLessEqual(metrics["recall_at_k"], 1.0)
+
+    def test_advanced_metrics_do_not_report_retrieved_count_as_recall(self):
+        retrieved = [{"source": "doc.txt"} for _ in range(20)]
+        metrics = advanced_ranking_metrics(retrieved, {"doc.txt"}, 20)
+        self.assertAlmostEqual(metrics["recall_at_k"], 1.0)
+        self.assertLessEqual(metrics["recall_at_k"], 1.0)
+
+    def test_answer_metrics_distinguish_correct_and_wrong_reference(self):
+        correct = text_metrics("Alice", "Alice", "Alice falls down the rabbit hole.")
+        wrong = text_metrics("Alice", "Bob", "Alice falls down the rabbit hole.")
+        self.assertEqual(correct["exact_match"], 1.0)
+        self.assertEqual(wrong["exact_match"], 0.0)
+        self.assertGreater(correct["answer_token_f1"], wrong["answer_token_f1"])
 
 
 if __name__ == "__main__":

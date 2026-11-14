@@ -88,7 +88,10 @@ class EvaluationCase(BaseModel):
 class EvaluationRequest(BaseModel):
     cases: List[EvaluationCase]
     top_k: int = 5
+    evaluation_k: List[int] = [5, 10, 20]
 
+class ComparisonRequest(EvaluationRequest):
+    pass
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -193,6 +196,10 @@ retriever = SemanticRetriever(
     bm25_k=retrieval_cfg.get('bm25_k', 30),
     alpha=retrieval_cfg.get('alpha', 0.65),
     enable_rerank=retrieval_cfg.get('rerank_enabled', False),
+    rerank_top_n=retrieval_cfg.get('rerank_top_n', 8),
+    rerank_candidate_pool=retrieval_cfg.get('rerank_candidate_pool', 20),
+    query_cache_ttl_s=retrieval_cfg.get('query_cache_ttl_s', 300),
+    query_cache_max_items=retrieval_cfg.get('query_cache_max_items', 10000),
 )
 
 # Optional Reranker (Cross-Encoder)
@@ -216,8 +223,11 @@ assembler = ContextAssembler(
     max_context_length=context_cfg.get('max_context_chars', 6000)
 )
 
-# Use flash-lite for demo: weaker with large context, generous free-tier RPM
-STABLE_MODEL = openrouter_cfg.get("model", "openai/gpt-4o-mini")
+# Use a listed OpenRouter free model by default; override it in config.yaml.
+STABLE_MODEL = openrouter_cfg.get(
+    "model",
+    "openai/gpt-4o-mini",
+)
 
 llm_standard = LLMInference(
     provider="openrouter",
@@ -256,7 +266,11 @@ Question: {query}
 Answer:"""
 
 def format_rag_prompt(query: str, context: str) -> str:
-    return f"""Answer the question accurately and comprehensively using ONLY the provided context. Ensure you include all relevant details found in the context (like keys, labels, or objects). If the answer is not in the context, say you don't know.
+    return f"""Answer the user's question using ONLY the provided context.
+Return one concise sentence that directly answers what the question asks (person, object, place, or event).
+Prefer a direct statement from the context over nearby narrative details. Do not answer a different
+question, repeat unrelated events, or add unsupported details. If the context does not contain the
+answer, say "I don't know."
 
 <CONTEXT>
 {context}
@@ -266,6 +280,80 @@ Question: {query}
 Answer:"""
 
 # ── API Endpoints ─────────────────────────────────────────────────────────────
+
+RESEARCH_CATALOG = {
+    "paper_readiness": {
+        "minimum_independent_queries": 30,
+        "required_relevance_labels": True,
+        "required_repeated_latency_runs": 3,
+        "confidence_intervals_require_independent_queries": True,
+        "status": "incomplete_until_benchmarks_are_run",
+    },
+    "experiments": [
+        {
+            "id": "retrieval_comparison",
+            "title": "Retrieval comparison",
+            "configurations": ["BM25", "Dense FAISS", "Hybrid RRF", "Hybrid + Cross-Encoder"],
+            "metrics": ["Precision@K", "Recall@K", "MRR@K", "nDCG@K", "MAP@K"],
+            "datasets": ["SciFact", "NFCorpus"],
+            "runner": "evaluation/runners/run_retrieval.py",
+            "status": "runner_available",
+        },
+        {
+            "id": "context_rot",
+            "title": "Context degradation",
+            "configurations": ["question-only", "recent-history", "long-context", "external-memory"],
+            "context_lengths_tokens": [4000, 8000, 16000, 32000, 64000],
+            "evidence_positions": ["beginning", "middle", "end"],
+            "metrics": ["accuracy", "evidence_recall", "context_utilization", "degradation_rate"],
+            "runner": "evaluation/runners/run_context_degradation.py",
+            "status": "runner_available",
+        },
+        {
+            "id": "answer_quality",
+            "title": "Answer quality",
+            "metrics": [
+                "exact_match", "token_f1", "semantic_similarity",
+                "answer_relevance", "claim_level_faithfulness",
+                "answer_correctness", "abstention_accuracy",
+            ],
+            "status": "lexical_proxies_available_judge_required_for_semantic_metrics",
+        },
+        {
+            "id": "efficiency",
+            "title": "Efficiency and scalability",
+            "metrics": [
+                "input_tokens", "output_tokens", "token_reduction",
+                "cost_per_query", "cold_latency", "warm_latency",
+                "p50", "p95", "p99", "throughput", "memory_overhead",
+            ],
+            "status": "partial_runtime_telemetry",
+        },
+        {
+            "id": "external_memory",
+            "title": "External-memory ablation",
+            "configurations": ["without memory", "with memory", "cross-platform memory"],
+            "metrics": ["Recall@K", "MRR@K", "answer_correctness", "staleness", "isolation"],
+            "runner": "evaluation/runners/run_memory_benchmark.py",
+            "status": "smoke_runner_available",
+        },
+        {
+            "id": "statistical_validation",
+            "title": "Statistical validation",
+            "methods": ["paired bootstrap CI", "Wilcoxon signed-rank", "Holm-Bonferroni"],
+            "module": "evaluation/metrics/statistical_tests.py",
+            "status": "available",
+        },
+    ],
+    "baselines": [
+        {"id": "B1", "title": "Full document to LLM", "status": "generation_experiment_required"},
+        {"id": "B2", "title": "Dense RAG", "status": "retrieval_runner_available"},
+        {"id": "B3", "title": "BM25 RAG", "status": "retrieval_runner_available"},
+        {"id": "B4", "title": "Hybrid RRF", "status": "retrieval_runner_available"},
+        {"id": "B5", "title": "Hybrid + cross-encoder", "status": "retrieval_runner_available"},
+        {"id": "B6", "title": "Proposed hybrid + memory + compaction", "status": "end_to_end_experiment_required"},
+    ],
+}
 
 @app.get("/health")
 def health_check():
@@ -290,6 +378,11 @@ def get_metrics():
 def metrics_catalog():
     """Describe the evaluation scorecard and which metrics need ground truth."""
     return {"status": "success", "categories": METRIC_CATALOG}
+
+@app.get("/research/catalog")
+def research_catalog():
+    """Return the reproducibility scorecard and available paper experiments."""
+    return {"status": "success", **RESEARCH_CATALOG}
 
 @app.get("/documents")
 def list_indexed_documents():
@@ -319,17 +412,66 @@ def evaluate(request: EvaluationRequest):
     """Run reproducible retrieval/evaluation cases against the current index."""
     if not request.cases:
         raise HTTPException(status_code=400, detail="At least one evaluation case is required")
+    evaluation_k = tuple(sorted(set(request.evaluation_k)))
+    if not evaluation_k or any(cutoff <= 0 for cutoff in evaluation_k):
+        raise HTTPException(status_code=400, detail="evaluation_k must contain positive cutoffs")
+    available_sources = {
+        str(metadata.get("source"))
+        for metadata in store.metadata
+        if metadata.get("source")
+    }
+    valid_cases = []
+    invalid_cases = []
+    for case_index, case in enumerate(request.cases):
+        errors = []
+        if not case.query.strip():
+            errors.append("query is empty")
+        unknown_sources = sorted({
+            source.split(":", 1)[0]
+            for source in case.relevant_sources
+            if source.split(":", 1)[0] not in available_sources
+        })
+        if unknown_sources:
+            errors.append(
+                f"unknown indexed sources: {', '.join(unknown_sources)}"
+            )
+        if errors:
+            invalid_cases.append({
+                "case_index": case_index,
+                "query": case.query,
+                "errors": errors,
+            })
+        else:
+            valid_cases.append((case_index, case))
+    if not valid_cases:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "No valid evaluation cases were supplied.",
+                "invalid_cases": invalid_cases,
+            },
+        )
 
     results: list[dict[str, Any]] = []
-    for case in request.cases:
-        if not case.query.strip():
-            raise HTTPException(status_code=400, detail="Evaluation queries cannot be empty")
+    for case_index, case in valid_cases:
         started = time.perf_counter()
         retrieval_started = time.perf_counter()
-        retrieved = retriever.retrieve(case.query, k=request.top_k)
+        retrieved, retrieval_trace = retriever.retrieve_with_trace(
+            case.query,
+            evaluation_k=evaluation_k,
+        )
         retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
         relevant = set(case.relevant_sources)
-        ranking = advanced_ranking_metrics(retrieved, relevant, request.top_k)
+        ranking = advanced_ranking_metrics(
+            retrieved,
+            relevant,
+            max(evaluation_k),
+        )
+        ranking_by_k = {
+            str(cutoff): advanced_ranking_metrics(retrieved, relevant, cutoff)
+            for cutoff in evaluation_k
+        }
+        compaction_started = time.perf_counter()
         compacted = assembler.compress_context(
             case.query,
             retrieved,
@@ -337,7 +479,26 @@ def evaluate(request: EvaluationRequest):
             max_sentences=context_cfg.get("max_sentences", 8),
             max_chunks_after_compaction=context_cfg.get("max_chunks", 10),
         )
+        compaction_ms = (time.perf_counter() - compaction_started) * 1000
         context = "\n\n".join(item.get("text", "") for item in compacted)
+        def chunk_id(item: dict) -> str:
+            metadata = item.get("metadata", {})
+            return f"{metadata.get('source', 'index')}:{metadata.get('chunk_index', '')}"
+        input_chunk_ids = [chunk_id(item) for item in retrieved]
+        retained_chunk_ids = [chunk_id(item) for item in compacted]
+        retrieval_trace["stages"]["compaction"] = {
+            "input_chunk_ids": input_chunk_ids,
+            "retained_chunk_ids": retained_chunk_ids,
+            "removed_chunk_ids": [
+                chunk_id for chunk_id in input_chunk_ids
+                if chunk_id not in retained_chunk_ids
+            ],
+            "input_tokens": len(
+                " ".join(item.get("text", "") for item in retrieved).split()
+            ),
+            "output_tokens": len(context.split()),
+            "latency_ms": compaction_ms,
+        }
         retrieved_sources = {
             str(item.get("source") or item.get("metadata", {}).get("source", ""))
             for item in retrieved
@@ -352,27 +513,84 @@ def evaluate(request: EvaluationRequest):
             "chunks_before": len(retrieved),
             "chunks_after": len(compacted),
         })
+        deduplicated = []
+        seen_context_ids = set()
+        for item in retrieved:
+            metadata = item.get("metadata", {})
+            identifier = (
+                item.get("id")
+                or item.get("chunk_id")
+                or f"{metadata.get('source', '')}:{metadata.get('chunk_index', '')}"
+            )
+            if identifier not in seen_context_ids:
+                seen_context_ids.add(identifier)
+                deduplicated.append(item)
+        context_variants = {
+            "retrieved context": context_quality_metrics(
+                retrieved, retrieved, relevant, case.context_budget_tokens
+            ),
+            "deduplicated context": context_quality_metrics(
+                retrieved, deduplicated, relevant, case.context_budget_tokens
+            ),
+            "compacted context": context_metrics,
+        }
         answer = ""
         generation_ms = 0.0
         tokens = {}
+        generated = {}
         generation_status = "skipped"
         generation_error = None
         if case.generate_answer:
             generation_started = time.perf_counter()
             try:
-                generated = llm_rag.generate(
-                    format_rag_prompt(case.query, context),
-                    max_tokens=768,
-                )
-            except Exception as exc:
-                logger.exception("Evaluation answer generation failed")
-                message = str(exc)
-                if "402" in message or "credits" in message.lower():
-                    message = (
-                        "OpenRouter credits are insufficient for answer generation. "
-                        "The request was reduced to 768 output tokens; add credits "
-                        "or disable answer generation to run retrieval metrics."
+                last_generation_error = None
+                generation_limit = context_cfg.get("max_generation_chars", 3000)
+                for context_chars in (
+                    generation_limit,
+                    max(1500, generation_limit // 2),
+                    1000,
+                ):
+                    prompt = format_rag_prompt(
+                        case.query,
+                        context[:context_chars],
                     )
+                    for budget in (256, 128, 64):
+                        try:
+                            generated = llm_rag.generate(
+                                prompt,
+                                max_tokens=budget,
+                            )
+                            break
+                        except Exception as exc:
+                            last_generation_error = exc
+                            if "402" not in str(exc):
+                                raise
+                    else:
+                        continue
+                    break
+                else:
+                    raise last_generation_error
+            except Exception as exc:
+                message = str(exc)
+                provider_detail = message.split("https://", 1)[0].strip()
+                if "prompt tokens limit exceeded" in message.lower():
+                    message = (
+                        "OpenRouter rejected the generation prompt because the "
+                        "key prompt-token limit is too small. The generation "
+                        "context is capped separately from retrieval metrics. "
+                        f"Provider detail: {provider_detail[:500]}"
+                    )
+                elif "402" in message or "credits" in message.lower():
+                    logger.warning("Evaluation answer generation skipped: OpenRouter credits are insufficient")
+                    message = (
+                        "OpenRouter rejected the request after trying 256, 128, "
+                        "and 64 output tokens. This usually means the API key's "
+                        "total limit is below the remaining account credits. "
+                        "Increase that key limit in OpenRouter or use another key. "
+                        f"Provider detail: {provider_detail[:500]}"
+                    )
+                else:
+                    logger.exception("Evaluation answer generation failed")
                 generation_status = "failed"
                 generation_error = message
             else:
@@ -381,10 +599,16 @@ def evaluate(request: EvaluationRequest):
                 tokens = generated.get("tokens_used", {})
                 generation_status = "completed"
         result = {
+            "case_index": case_index,
             "query": case.query,
+            "expected_answer": case.expected_answer,
+            "generated_answer": answer if generation_status == "completed" else None,
             "retrieved_sources": sorted(retrieved_sources),
             "retrieval": ranking,
+            "retrieval_by_k": ranking_by_k,
+            "trace": retrieval_trace,
             "context": context_metrics,
+            "context_variants": context_variants,
             "answer": (
                 text_metrics(answer, case.expected_answer, context)
                 if case.expected_answer and generation_status == "completed" else None
@@ -403,6 +627,12 @@ def evaluate(request: EvaluationRequest):
             },
             "system": {
                 "retrieval_ms": retrieval_ms,
+                "embedding_ms": retrieval_trace["stages"]["embedding"]["latency_ms"],
+                "bm25_ms": retrieval_trace["stages"]["bm25"]["latency_ms"],
+                "faiss_ms": retrieval_trace["stages"]["dense"]["latency_ms"],
+                "rrf_ms": retrieval_trace["stages"]["rrf"]["latency_ms"],
+                "reranking_ms": retrieval_trace["stages"]["reranker"]["latency_ms"],
+                "compaction_ms": compaction_ms,
                 "generation_ms": generation_ms,
                 "total_ms": (time.perf_counter() - started) * 1000,
                 "prompt_tokens": tokens.get("prompt", 0),
@@ -443,11 +673,156 @@ def evaluate(request: EvaluationRequest):
     return {
         "status": "success",
         "cases": results,
+        "invalid_cases": invalid_cases,
         "summary": {
             "case_count": len(results),
             "metrics": summary_metrics,
             "latency": summarize_metric(latency_values),
         },
+    }
+
+@app.post("/evaluate/compare")
+def compare_pipeline_stages(request: ComparisonRequest):
+    """Compare retrieval stages on the exact same query and label set."""
+    if not request.cases:
+        raise HTTPException(status_code=400, detail="At least one comparison case is required")
+
+    baseline = evaluate(EvaluationRequest(
+        cases=[case.copy(update={"generate_answer": False}) for case in request.cases],
+        evaluation_k=request.evaluation_k,
+    ))
+    cutoffs = tuple(sorted(set(request.evaluation_k)))
+    if not cutoffs or any(cutoff <= 0 for cutoff in cutoffs):
+        raise HTTPException(status_code=400, detail="evaluation_k must contain positive cutoffs")
+    stage_names = ("bm25", "dense", "rrf", "reranked")
+    stage_values = {
+        name: {cutoff: [] for cutoff in cutoffs}
+        for name in stage_names
+    }
+    latency_values = {name: [] for name in (
+        "embedding", "bm25", "faiss", "rrf", "reranker", "compaction", "end_to_end"
+    )}
+
+    for result in baseline["cases"]:
+        case = request.cases[result["case_index"]]
+        relevant = set(case.relevant_sources)
+        trace = result["trace"]
+        stage_ids = {
+            "bm25": trace["stages"]["bm25"]["retrieved_chunk_ids"],
+            "dense": trace["stages"]["dense"]["retrieved_chunk_ids"],
+            "rrf": trace["stages"]["rrf"]["candidate_chunk_ids"],
+            "reranked": trace["stages"]["reranker"]["reranked_chunk_ids"],
+        }
+        for name, ids in stage_ids.items():
+            for cutoff in cutoffs:
+                stage_values[name][cutoff].append(
+                    advanced_ranking_metrics(
+                        [{"chunk_id": chunk_id} for chunk_id in ids],
+                        relevant,
+                        cutoff,
+                    )
+                )
+        system = result["system"]
+        trace_stages = trace["stages"]
+        for name, value in {
+            "embedding": trace_stages["embedding"]["latency_ms"],
+            "bm25": trace_stages["bm25"]["latency_ms"],
+            "faiss": trace_stages["dense"]["latency_ms"],
+            "rrf": trace_stages["rrf"]["latency_ms"],
+            "reranker": trace_stages["reranker"]["latency_ms"],
+            "compaction": trace_stages["compaction"]["latency_ms"],
+            "end_to_end": system["total_ms"],
+        }.items():
+            latency_values[name].append(value)
+
+    def average(stage: str, cutoff: int) -> dict:
+        values = stage_values[stage][cutoff]
+        fields = ("precision_at_k", "recall_at_k", "mrr_at_k", "ndcg_at_k")
+        return {
+            field: summarize_metric([
+                item[field] for item in values if item[field] is not None
+            ])
+            for field in fields
+        }
+
+    context_variants = {
+        "retrieved context": [],
+        "deduplicated context": [],
+        "compacted context": [],
+    }
+    for result in baseline["cases"]:
+        for name in context_variants:
+            context_variants[name].append(result["context_variants"][name])
+
+    def context_average(name: str) -> dict:
+        values = context_variants[name]
+        return {
+            "evidence_recall": summarize_metric([
+                item["context_recall"]
+                for item in values if item["context_recall"] is not None
+            ]),
+            "tokens": summarize_metric([
+                item["tokens_after"] for item in values
+            ]),
+            "retention": summarize_metric([
+                item["evidence_retention"]
+                for item in values if item["evidence_retention"] is not None
+            ]),
+        }
+
+    return {
+        "status": "success",
+        "query_count": len(request.cases),
+        "valid_query_count": len(baseline["cases"]),
+        "invalid_cases": baseline.get("invalid_cases", []),
+        "configuration": {
+            "evaluation_k": list(cutoffs),
+            "same_queries_and_labels": True,
+            "relevance_label_count": sum(
+                len(case.relevant_sources) for case in request.cases
+            ),
+            "generation": "not_run",
+        },
+        "retrieval_comparison": [
+            {
+                "method": name,
+                "metrics_by_k": {
+                    str(cutoff): average(name, cutoff)
+                    for cutoff in cutoffs
+                },
+                "metrics": average(name, max(cutoffs)),
+            }
+            for name in stage_names
+        ],
+        "context_comparison": [
+            {"configuration": name, "metrics": context_average(name)}
+            for name in context_variants
+        ],
+        "generation_comparison": {
+            "status": "not_run",
+            "reason": "Run generation separately when the provider has sufficient credits.",
+            "configurations": [
+                "full document",
+                "dense RAG",
+                "hybrid RAG",
+                "hybrid plus reranker",
+                "complete pipeline",
+            ],
+        },
+        "latency_comparison": {
+            name: summarize_metric(values)
+            for name, values in latency_values.items()
+        },
+        "per_query": [
+            {
+                "case_index": result["case_index"],
+                "query": result["query"],
+                "trace": result["trace"],
+                "retrieval": result["retrieval"],
+                "relevant_sources": request.cases[result["case_index"]].relevant_sources,
+            }
+            for result in baseline["cases"]
+        ],
     }
 
 @app.post("/upload", response_model=UploadResponse)
