@@ -51,7 +51,7 @@ app = FastAPI(
 # Explicit browser-origin allowlist. Configure CORS_ALLOWED_ORIGINS in deployment.
 _default_origins = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
 cors_setting = os.getenv("CORS_ALLOWED_ORIGINS")
-if os.getenv("APP_ENV", "development").lower() == "production" and not cors_setting:
+if os.getenv("APP_ENV", "development").lower() != "development" and not cors_setting:
     raise RuntimeError("CORS_ALLOWED_ORIGINS must be configured in production")
 allowed_origins = [
     origin.strip() for origin in (cors_setting or _default_origins).split(",")
@@ -59,7 +59,7 @@ allowed_origins = [
 ]
 if "*" in allowed_origins:
     raise RuntimeError("Wildcard CORS origins are not permitted")
-if os.getenv("APP_ENV", "development").lower() == "production" and not allowed_origins:
+if os.getenv("APP_ENV", "development").lower() != "development" and not allowed_origins:
     raise RuntimeError("CORS_ALLOWED_ORIGINS must contain at least one explicit origin")
 # All API routes require a signed bearer token except health and login.
 @app.middleware("http")
