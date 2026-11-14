@@ -15,7 +15,7 @@ from typing import Optional
 
 APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
 if APP_ENV != "development" and not os.getenv("AUTH_SECRET_KEY"):
-    raise RuntimeError("AUTH_SECRET_KEY must be set in production")
+    raise RuntimeError("AUTH_SECRET_KEY must be set outside development")
 
 _SECRET = os.getenv(
     "AUTH_SECRET_KEY",
@@ -24,7 +24,7 @@ _SECRET = os.getenv(
 if APP_ENV != "development" and (
     len(_SECRET) < 32 or b"replace-this" in _SECRET
 ):
-    raise RuntimeError("Set AUTH_SECRET_KEY to a unique random value of at least 32 bytes in production")
+    raise RuntimeError("Set AUTH_SECRET_KEY to a unique random value of at least 32 bytes outside development")
 USERNAME = os.getenv("DEMO_USERNAME", "demo")
 if APP_ENV == "development":
     PASSWORD = os.getenv("DEMO_PASSWORD", "123456")
