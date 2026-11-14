@@ -14,8 +14,10 @@ class TextChunker:
             chunk_size (int): Number of words per chunk
             overlap (int): Number of overlapping words between chunks
         """
-        if overlap >= chunk_size:
-            raise ValueError("Overlap must be less than chunk_size")
+        if not isinstance(chunk_size, int) or chunk_size <= 0:
+            raise ValueError("chunk_size must be a positive integer")
+        if not isinstance(overlap, int) or overlap < 0 or overlap >= chunk_size:
+            raise ValueError("overlap must be an integer in [0, chunk_size)")
         self.chunk_size = chunk_size
         self.overlap = overlap
     
