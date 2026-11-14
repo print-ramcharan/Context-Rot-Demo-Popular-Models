@@ -477,24 +477,33 @@ class SemanticRetriever:
         ranked = sorted(rrf_scores.items(), key=lambda item: (-item[1], item[0]))
 
         retrieved_items = []
-        for rank, (idx, score) in enumerate(ranked[:k]):
-            if idx >= len(self.vector_store.chunks):
+        # Apply the threshold before the final top-k cutoff. Slicing the fused
+        # ranking first can discard valid lower-ranked candidates and return
+        # fewer than k results even when enough qualifying candidates exist.
+        for idx, score in ranked:
+            if idx < 0 or idx >= len(self.vector_store.chunks):
                 continue
 
-            # Apply similarity threshold on the original dense score if available
-            dense_score = dense_score_map.get(idx, None)
-            if threshold > 0 and dense_score is not None:
-                if self.vector_store.index_type == "cosine" and dense_score < threshold:
-                    continue
+            # Apply the cosine threshold to candidates that have a dense score.
+            dense_score = dense_score_map.get(idx)
+            if (
+                threshold > 0
+                and dense_score is not None
+                and self.vector_store.index_type == "cosine"
+                and dense_score < threshold
+            ):
+                continue
 
             retrieved_items.append({
                 'text': self.vector_store.chunks[idx],
                 'score': score,
                 'metadata': self.vector_store.metadata[idx],
-                'rank': rank,
+                'rank': len(retrieved_items) + 1,
                 'dense_score': dense_score,
                 'bm25_score': bm25_scores_list[idx] if idx < len(bm25_scores_list) else 0.0
             })
+            if len(retrieved_items) >= k:
+                break
 
         return self._apply_rerank(query, retrieved_items)
 
