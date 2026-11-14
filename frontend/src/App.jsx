@@ -1024,6 +1024,10 @@ export default function App() {
         body: JSON.stringify({ user_query: query })
       });
 
+      if (response.status === 401) {
+        setAccessToken(null);
+        setToken('');
+      }
       if (!response.ok) throw new Error(`${type} query failed`);
 
       const reader = response.body.getReader();
