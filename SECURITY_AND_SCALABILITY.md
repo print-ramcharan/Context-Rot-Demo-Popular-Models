@@ -37,7 +37,7 @@ python -m uvicorn api:app --host 127.0.0.1 --port 8001
 
 The frontend login screen uses the same configured credentials. Its bearer token is held in browser `sessionStorage`; this is suitable only as a prototype convenience. A production browser deployment should prefer a same-site, HttpOnly, Secure cookie or a vetted OAuth/OIDC authorization-code flow.
 
-For the browser extension, configure its API base URL and provide an access token after signing in. Do not embed a permanent shared credential in extension source code.
+The extension popup also supports sign-in and stores the short-lived bearer token in `chrome.storage.local`. Its development API base is `http://127.0.0.1:8001`. If the browser blocks the popup's cross-origin login request, add the installed extension origin (`chrome-extension://<extension-id>`) to `CORS_ALLOWED_ORIGINS`. Do not embed a permanent shared credential in extension source code.
 
 ## Production-oriented scaling path
 
