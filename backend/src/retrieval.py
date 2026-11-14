@@ -149,8 +149,10 @@ class SemanticRetriever:
 
     @staticmethod
     def _trace_chunk_id(index: int, metadata: dict) -> str:
-        source = metadata.get("source", "index")
-        chunk_index = metadata.get("chunk_index", index)
+        source = metadata.get("source") or "index"
+        chunk_index = metadata.get("chunk_index")
+        if chunk_index is None:
+            chunk_index = index
         return f"{source}:{chunk_index}"
 
     def retrieve_with_trace(
@@ -234,28 +236,44 @@ class SemanticRetriever:
 
         rerank_input = candidate_items[:max(self.rerank_candidate_pool, max_k)]
         rerank_start = time.perf_counter()
-        if self.enable_rerank and self.reranker and rerank_input:
-            final_items = self.reranker.rerank(
-                query, rerank_input, top_n=max_k
-            )
+        reranker_applied = False
+        if self.enable_rerank:
+            if self.reranker is None or getattr(self.reranker, "model", object()) is None:
+                raise RuntimeError(
+                    "Reranking is enabled, but the cross-encoder is unavailable. "
+                    "The evaluation was stopped rather than silently labelling "
+                    "unreranked candidates as reranked."
+                )
+            if rerank_input:
+                final_items = self.reranker.rerank(
+                    query, rerank_input, top_n=max_k
+                )
+                reranker_applied = True
+            else:
+                final_items = []
         else:
             final_items = rerank_input[:max_k]
         rerank_ms = (time.perf_counter() - rerank_start) * 1000
         final_items = final_items[:max_k]
 
-        def trace_item(item: dict, score_key: str = "score") -> dict:
+        def trace_item(item: dict, final_rank: int | None = None) -> dict:
             metadata = item.get("metadata", {})
+            fallback_index = item.get("vector_index")
+            if fallback_index is None:
+                fallback_index = item.get("original_rank")
+            if fallback_index is None:
+                fallback_index = item.get("rank", 0)
             return {
-                "chunk_id": self._trace_chunk_id(
-                    metadata.get("chunk_index", item.get("rank", 0)), metadata
-                ),
-                "score": item.get(score_key),
-                "rank": item.get("rank"),
+                "chunk_id": self._trace_chunk_id(fallback_index, metadata),
+                "score": item.get("score"),
+                "rank": final_rank if final_rank is not None else item.get("rank"),
+                "original_rank": item.get("original_rank"),
                 "metadata": metadata,
             }
 
         reranked_ids = [
-            trace_item(item)["chunk_id"] for item in final_items
+            trace_item(item, final_rank)["chunk_id"]
+            for final_rank, item in enumerate(final_items, start=1)
         ]
         input_ids = [
             trace_item(item)["chunk_id"] for item in rerank_input
@@ -295,18 +313,25 @@ class SemanticRetriever:
                     "latency_ms": rrf_ms,
                 },
                 "reranker": {
+                    "enabled": self.enable_rerank,
+                    "applied": reranker_applied,
                     "input_chunk_ids": input_ids,
                     "scored_chunk_ids": (
-                        self.reranker.last_trace.get("scored_chunk_ids", input_ids)
-                        if self.reranker else input_ids
+                        self.reranker.last_trace.get("scored_chunk_ids", [])
+                        if reranker_applied else []
                     ),
                     "reranked_chunk_ids": reranked_ids,
+                    "final_ranks": list(range(1, len(reranked_ids) + 1)),
+                    "original_ranks": [
+                        item.get("original_rank", item.get("rank"))
+                        for item in final_items
+                    ],
                     "discarded_chunk_ids": [
                         chunk_id for chunk_id in input_ids if chunk_id not in reranked_ids
                     ],
                     "raw_scores": (
                         self.reranker.last_trace.get("raw_scores", [])
-                        if self.reranker else []
+                        if reranker_applied else []
                     ),
                     "latency_ms": rerank_ms,
                 },
