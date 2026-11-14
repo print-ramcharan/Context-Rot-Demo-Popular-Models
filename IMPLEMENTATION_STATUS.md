@@ -18,9 +18,9 @@ completed command. Unrun experiments are not represented as results.
 - The November 13 run `depth_audit_20261113_170539` completed, but inspection
   after that run found that its B4 path still collapsed chunks to parent
   documents before reranking. Its B4 scores therefore do NOT evaluate the
-  corrected chunk-level reranking implementation added afterward. Preserve
-  those outputs as historical results; rerun B1-B4 before making claims about
-  the corrected reranker.
+  corrected chunk-level reranking implementation. Preserve those outputs as
+  historical results; use the complete November 14 run documented below for
+  corrected reranker analysis.
 
 ## Implemented in this revision
 
@@ -34,8 +34,9 @@ completed command. Unrun experiments are not represented as results.
   It scores title-plus-passage text, then retains the highest
   cross-encoder-scoring passage for each parent. A regression test verifies
   that alternate passages from the same parent reach the cross-encoder.
-- Reranking latency is measured during the actual B4 pass rather than by
-  running a second, duplicate reranking pass for timing.
+- Reranking latency is measured during the actual reranking pass rather than
+  by running a second, duplicate reranking pass for timing (historical B4;
+  current paper-mapped B2).
 - The paper-aligned B2 now fails explicitly if the cross-encoder failed to
   load, rather than silently producing an unreranked result under the reranker label.
 - The per-query NDCG implementation uses graded gains and the complete query
