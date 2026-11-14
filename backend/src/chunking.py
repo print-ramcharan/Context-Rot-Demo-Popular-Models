@@ -33,30 +33,26 @@ class TextChunker:
         Returns:
             list[dict]: [{'text', 'offset', 'length', 'word_count', 'chunk_index'}]
         """
-        words = self._normalize_and_split(text)
-        if not words:
+        # Preserve offsets into the original, unnormalized source text.
+        spans = [(match.group(0), match.start(), match.end())
+                 for match in re.finditer(r"\\S+", text or "")]
+        if not spans:
             return []
-
-        # Precompute word offsets in normalized text
-        word_offsets = []
-        cursor = 0
-        for word in words:
-            word_offsets.append(cursor)
-            cursor += len(word) + 1  # account for single space
 
         chunks = []
         start = 0
         chunk_index = 0
-        while start < len(words):
-            end = start + self.chunk_size
-            chunk_words = words[start:end]
-            chunk_text = " ".join(chunk_words)
-            offset = word_offsets[start]
+        while start < len(spans):
+            end = min(start + self.chunk_size, len(spans))
+            selected = spans[start:end]
+            chunk_text = " ".join(item[0] for item in selected)
+            offset = selected[0][1]
+            source_end = selected[-1][2]
             chunks.append({
                 "text": chunk_text,
                 "offset": offset,
-                "length": len(chunk_text),
-                "word_count": len(chunk_words),
+                "length": source_end - offset,
+                "word_count": len(selected),
                 "chunk_index": chunk_index
             })
             chunk_index += 1
