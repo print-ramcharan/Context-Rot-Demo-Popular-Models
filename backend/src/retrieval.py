@@ -565,6 +565,72 @@ class SemanticRetriever:
                 
         return unique_results
     
+    def expand_parent_context(
+        self,
+        chunks: list[dict],
+        max_neighbors: int = 1,
+        max_total: int = 20,
+    ) -> list[dict]:
+        """Add adjacent child passages from the same parent section.
+
+        Retrieval still ranks child chunks. This step restores nearby source
+        context without mixing sections or documents.
+        """
+        if not chunks or max_neighbors <= 0:
+            return chunks
+
+        positions = {}
+        for index, metadata in enumerate(self.vector_store.metadata):
+            document_id = metadata.get("document_id")
+            chunk_index = metadata.get("chunk_index")
+            if document_id is not None and chunk_index is not None:
+                positions[(document_id, chunk_index)] = index
+
+        expanded = list(chunks)
+        seen = {
+            (item.get("metadata", {}).get("document_id"),
+             item.get("metadata", {}).get("chunk_index"))
+            for item in chunks
+        }
+
+        for item in chunks:
+            metadata = item.get("metadata", {})
+            document_id = metadata.get("document_id")
+            parent_id = metadata.get("parent_id")
+            chunk_index = metadata.get("chunk_index")
+            if document_id is None or parent_id is None or chunk_index is None:
+                continue
+
+            for distance in range(1, max_neighbors + 1):
+                for neighbor_index in (chunk_index - distance, chunk_index + distance):
+                    key = (document_id, neighbor_index)
+                    vector_index = positions.get(key)
+                    if vector_index is None or key in seen:
+                        continue
+                    neighbor_metadata = self.vector_store.metadata[vector_index]
+                    if neighbor_metadata.get("parent_id") != parent_id:
+                        continue
+                    expanded.append({
+                        "text": self.vector_store.chunks[vector_index],
+                        "score": float(item.get("score", 0.0)) * (0.98 ** distance),
+                        "metadata": neighbor_metadata,
+                        "rank": len(expanded) + 1,
+                        "expanded_from": metadata.get("chunk_id"),
+                    })
+                    seen.add(key)
+                    if len(expanded) >= max_total:
+                        return sorted(
+                            expanded,
+                            key=lambda value: value.get("score", 0.0),
+                            reverse=True,
+                        )[:max_total]
+
+        return sorted(
+            expanded,
+            key=lambda value: value.get("score", 0.0),
+            reverse=True,
+        )[:max_total]
+
     def deduplicate_chunks(self, chunks: list[dict], overlap_threshold: float = 0.82) -> list[dict]:
         """Remove exact duplicates and heavily overlapping sibling chunks.
 
