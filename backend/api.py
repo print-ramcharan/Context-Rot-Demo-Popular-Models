@@ -944,7 +944,7 @@ async def handle_query_standard(request: QueryRequest):
             
             yield json.dumps({"type": "metadata", "model": llm_standard.model}) + "\n"
 
-            full_context = store.get_all_texts()
+            full_context = "\n\n".join(store.get_all_texts())
             prompt = format_standard_prompt(user_query, full_context)
             
             async for chunk in llm_standard.stream_generate(prompt):
@@ -1040,6 +1040,74 @@ async def handle_query_rag(request: QueryRequest):
             }) + "\n"
 
     return StreamingResponse(stream_rag(), media_type="application/x-ndjson")
+
+@app.post("/reindex")
+def reindex_documents():
+    """Rebuild the active index from files already stored in backend/data.
+
+    Use this once after changing the embedding model or index dimension.
+    """
+    files = sorted(
+        path for path in DATA_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in {".pdf", ".docx", ".txt", ".md"}
+        and not path.name.startswith(".upload-")
+    )
+    if not files:
+        raise HTTPException(status_code=400, detail="No supported source files found in backend/data")
+
+    store.clear()
+    indexed_files = []
+    failures = []
+    for path in files:
+        try:
+            text_content = extract_document(path)
+            if not text_content.strip():
+                failures.append({"file": path.name, "error": "No text extracted"})
+                continue
+            document_id = document_id_for(text_content)
+            if store.contains_document(document_id):
+                continue
+            chunk_dicts = chunker.chunk_document(text_content)
+            embedding_texts = [
+                ("Section: " + " > ".join(chunk.get("section_path", [])) + "\n" + chunk["text"]).strip()
+                for chunk in chunk_dicts
+            ]
+            embeddings = gen.embed_batch(embedding_texts, batch_size=16)
+            metadata = [{
+                "document_id": document_id,
+                "chunk_id": chunk_id_for(document_id, index, chunk["text"]),
+                "source": path.name,
+                "chunk_index": index,
+                "parent_id": chunk.get("parent_id"),
+                "section_path": chunk.get("section_path", []),
+                "section_index": chunk.get("section_index"),
+                "char_offset": chunk["offset"],
+                "char_length": chunk["length"],
+                "word_count": chunk["word_count"],
+                "embedding_model": gen.model_name,
+            } for index, chunk in enumerate(chunk_dicts)]
+            store.add(embeddings, [chunk["text"] for chunk in chunk_dicts], metadata=metadata)
+            indexed_files.append({"file": path.name, "chunks": len(chunk_dicts)})
+        except Exception as exc:
+            logger.exception("Reindex failed for %s", path.name)
+            failures.append({"file": path.name, "error": str(exc)})
+
+    if not indexed_files:
+        raise HTTPException(status_code=500, detail={"message": "No documents could be reindexed", "failures": failures})
+
+    retriever.invalidate_cache()
+    store.save(INDEX_PATH)
+    retriever.build_lexical_index()
+    return {
+        "status": "success",
+        "embedding_model": gen.model_name,
+        "embedding_dimension": gen.get_embedding_dimension(),
+        "documents_indexed": len(indexed_files),
+        "chunks_indexed": len(store.chunks),
+        "documents": indexed_files,
+        "failures": failures,
+    }
+
 
 @app.delete("/clear")
 async def clear_store():
