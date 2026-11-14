@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,7 @@ def inspect_sources(root: Path) -> dict[str, Any]:
             "recommended_action": remediation,
         })
 
-    if "allow_origins=[\"*\"]" in api or "allow_origins=['*']" in api:
+    if re.search(r"allow_origins\\s*=\\s*\\[[^]]*['\\\"]\\*['\\\"]", api):
         add(
             "CORS_WILDCARD", "high", "api.py",
             "CORS accepts every origin.",
@@ -43,6 +44,7 @@ def inspect_sources(root: Path) -> dict[str, Any]:
     auth_markers = (
         "HTTPBearer(", "OAuth2PasswordBearer(", "APIKeyHeader(",
         "Depends(require_authenticated_user)", "Depends(get_current_user)",
+        '@app.middleware("http")', "verify_access_token(",
     )
     if not any(marker in api for marker in auth_markers):
         add(
@@ -71,10 +73,12 @@ def inspect_sources(root: Path) -> dict[str, Any]:
             "Bind each session to an authenticated principal and enforce ownership checks on read, write, and delete.",
         )
 
-    if not any(f["severity"] == "critical" for f in findings):
-        status = "review_required"
-    else:
+    if not findings:
+        status = "passed_static_checks"
+    elif any(f["severity"] == "critical" for f in findings):
         status = "blocking_findings"
+    else:
+        status = "review_required"
 
     return {
         "audit_type": "static_source_review",
@@ -104,7 +108,7 @@ def main() -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n", encoding="utf-8")
-    return 1 if any(item["severity"] == "critical" for item in report["findings"]) else 0
+    return 1 if report["findings"] else 0
 
 
 if __name__ == "__main__":
