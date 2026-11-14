@@ -10,7 +10,6 @@ import hashlib
 import hmac
 import json
 import os
-import secrets
 import time
 from typing import Optional
 
@@ -22,6 +21,8 @@ _SECRET = os.getenv(
     "AUTH_SECRET_KEY",
     "local-development-only-change-this-secret-before-deployment",
 ).encode("utf-8")
+if APP_ENV == "production" and len(_SECRET) < 32:
+    raise RuntimeError("AUTH_SECRET_KEY must contain at least 32 bytes in production")
 USERNAME = os.getenv("DEMO_USERNAME", "demo")
 if APP_ENV == "development":
     PASSWORD = os.getenv("DEMO_PASSWORD", "123456")
