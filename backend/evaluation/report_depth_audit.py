@@ -88,7 +88,7 @@ def main() -> None:
                 f"`{significance}`.",
             ]
         )
-    output = args.run_dir / "DEPTH_AUDIT_REPORT.md"
+    output = args.run_dir / "DEPTH_AUDIT_REPORT_PAPER_MAPPING.md"
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(output)
 
