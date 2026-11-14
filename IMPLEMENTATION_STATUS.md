@@ -56,20 +56,35 @@ completed command. Unrun experiments are not represented as results.
   saves per-question predictions, token F1/exact-match diagnostics, token use,
   and generation latency. It has not yet been executed on the full benchmark.
 
-## Required execution
+## Historical BEIR results: reuse before rerunning
 
-The existing raw BEIR run predates the B4 depth fix. Rerun before publication:
+The complete run `depth_audit_20261114_191803` is preserved with raw per-query
+records and `raw/run_metadata.json`. Its recorded code commit contains the
+chunk-before-parent cross-encoder reranking path. In that historical runner
+mapping, raw B2 is dense-only and raw B4 is hybrid plus reranking. The current
+paper mapping reverses those two IDs.
+
+The rank-preserving analyzer validates the legacy run metadata and checks the
+reranking-latency signature across both datasets before applying the B2/B4
+swap in memory. It does not rename, rewrite, or delete raw JSON. It writes new
+metrics and statistics under `processed_rank_preserving/`. The depth audit
+uses the same validated mapping and writes
+`DEPTH_AUDIT_REPORT_PAPER_MAPPING.md`, preserving any earlier report.
+
+Run only these post-processing commands from `backend/`; they do not execute
+retrieval, load embedding models, or call an LLM API:
 
 ```bash
-cd backend
-OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
-VECLIB_MAXIMUM_THREADS=1 KMP_DUPLICATE_LIB_OK=TRUE \
-TOKENIZERS_PARALLELISM=false python -m evaluation.runners.run_retrieval
-KMP_DUPLICATE_LIB_OK=TRUE python -m evaluation.analyze_results \
-  --run-dir evaluation/results/runs/depth_audit_<timestamp>
-python -m evaluation.report_depth_audit \
-  --run-dir evaluation/results/runs/depth_audit_<timestamp>
+python -m evaluation.analyze_results \\
+  --run-dir evaluation/results/runs/depth_audit_20261114_191803
+python -m evaluation.report_depth_audit \\
+  --run-dir evaluation/results/runs/depth_audit_20261114_191803
 ```
+
+The analyzer checks full query coverage against the installed BEIR datasets
+and stops if the run is incomplete or its mapping cannot be proven. The
+November 13 run `depth_audit_20261113_170539` predates the final
+chunk-before-parent reranking fix and must not be substituted for this run.
 
 Run the cross-platform harness with an independently labelled dataset (the
 checked-in example is only a smoke-test fixture):
@@ -116,13 +131,14 @@ LongMemEval LLM-judge score.
 ## Not completed
 
 The context-degradation runner is implemented but has not been executed; no
-answer-quality or context-degradation results exist yet. The corrected
-chunk-level B4 runner also requires a fresh BEIR run; the November 13 17:05
-run predates that final fix. The official
-LongMemEval LLM-judge evaluation, Longformer/long-context model comparison,
-advanced RAG framework comparisons, RAM profiling, production-scale
-concurrency, and end-to-end security controls remain unimplemented or
-unmeasured. Do not claim these results until completed.
+answer-quality or context-degradation results exist yet. The November 14
+`depth_audit_20261114_191803` run contains the corrected chunk-before-parent
+reranking implementation under the historical B2/B4 IDs and can be analyzed
+without rerunning retrieval. The November 13 17:05 run predates that fix.
+The official LongMemEval LLM-judge evaluation, Longformer/long-context model
+comparison, advanced RAG framework comparisons, RAM profiling,
+production-scale concurrency, and end-to-end security controls remain
+unimplemented or unmeasured. Do not claim these results until completed.
 
 
 ## Paper-revision work on the current branch
@@ -133,8 +149,9 @@ unmeasured. Do not claim these results until completed.
   - B3: Hybrid RRF without reranking.
   - B4: Dense FAISS only.
 - The paired-statistics runner and rank-preserving analyzer now compare B2 against B1, B3, and B4.
-- Every new BEIR run records its exact B1-B4 mapping in `raw/run_metadata.json`. The analyzer refuses to process a run with no mapping manifest or a different mapping. This prevents old raw B2/B4 records from being silently relabelled.
-- Historical result directories are not rewritten. The November 13 run used the previous code mapping (B2 dense; B4 reranked hybrid); the paper's manually corrected labels must not be treated as the raw runner's original labels. Use a new timestamped run for any fresh paper statistics.
+- Every new BEIR run records its exact B1-B4 mapping in `raw/run_metadata.json`. For pre-manifest runs, the analyzer supports only the known legacy B2/B4 reversal after validating the recorded reranker setting, matching query IDs, and per-query reranking-latency signature on both datasets.
+- Legacy mapping is applied only to the in-memory analysis view. Raw per-query records and historical summaries remain unchanged; the applied paper-to-raw mapping is recorded in `processed_rank_preserving/analysis_manifest.json`.
+- The complete November 14 run `depth_audit_20261114_191803` can be reused for official retrieval metrics, paired bootstrap confidence intervals, Wilcoxon tests, Holm correction, and the corrected depth audit. No retrieval rerun is required to produce these outputs.
 - Added `evaluation/runners/run_resource_scalability.py` to measure index build time, embedding build time, BM25 build time, FAISS disk footprint, embedding bytes, estimated BM25 Python-object size, process RSS, and per-configuration retrieval latency over increasing SciFact/NFCorpus corpus fractions. It runs each scale in a separate subprocess. This is an experiment harness, not a completed result.
 
 ### Commands for the outstanding execution
