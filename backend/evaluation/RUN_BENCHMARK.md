@@ -15,8 +15,16 @@ cd backend
 source venv/bin/activate
 
 python -m pip install "beir>=2.0.0" "scipy>=1.11.0"
-python -m evaluation.runners.run_retrieval
+python -m evaluation.runners.run_retrieval --batch-size 25
 ```
+
+The runner now creates the run directory immediately and writes one raw JSON checkpoint after each query/configuration. It prints progress every 25 queries. If the process is interrupted, copy the exact `RUN_DIR=...` path printed at startup and resume without repeating completed query/configuration work:
+
+```bash
+python -m evaluation.runners.run_retrieval --batch-size 25 --run-dir "<PASTE_THE_EXACT_RUN_DIR_HERE>"
+```
+
+Do not change the experiment configuration or code between the interrupted run and its resume. The final aggregate CSVs, paired statistics, latency summary, depth audit, and metadata are written after all configured datasets finish.
 
 The first run downloads the official SciFact and NFCorpus archives into `backend/evaluation/data/`, and downloads the configured embedding and reranker models if they are not already cached. Keep the machine connected to the internet and allow the run to finish. No OpenRouter/API key is required: this is a retrieval-only benchmark.
 
