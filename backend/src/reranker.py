@@ -36,9 +36,20 @@ class CrossEncoderReranker:
             for candidate in candidates
         ]
         scores = self.model.predict(pairs, show_progress_bar=False)
+        def chunk_id(candidate: dict, index: int) -> str:
+            metadata = candidate.get("metadata", {})
+            explicit_id = metadata.get("chunk_id")
+            if explicit_id is not None:
+                return str(explicit_id)
+            source = metadata.get("source") or "index"
+            chunk_index = metadata.get("chunk_index")
+            if chunk_index is None:
+                chunk_index = index
+            return f"{source}:{chunk_index}"
+
         self.last_trace = {
             "scored_chunk_ids": [
-                str(candidate.get("metadata", {}).get("chunk_id", index))
+                chunk_id(candidate, index)
                 for index, candidate in enumerate(candidates)
             ],
             "raw_scores": [float(score) for score in scores],
