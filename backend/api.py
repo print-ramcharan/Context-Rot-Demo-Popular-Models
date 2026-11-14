@@ -203,6 +203,7 @@ retriever = SemanticRetriever(
     dense_k=retrieval_cfg.get('dense_k', 30),
     bm25_k=retrieval_cfg.get('bm25_k', 30),
     alpha=retrieval_cfg.get('alpha', 0.65),
+    rrf_k=retrieval_cfg.get('rrf_k', 60),
     enable_rerank=retrieval_cfg.get('rerank_enabled', False),
     rerank_top_n=retrieval_cfg.get('rerank_top_n', 8),
     rerank_candidate_pool=retrieval_cfg.get('rerank_candidate_pool', 20),
@@ -849,7 +850,7 @@ async def upload_file(
             retriever.invalidate_cache()
             store.save(INDEX_PATH)
 
-        safe_filename = Path(file.filename or "upload").name
+        safe_filename = Path((file.filename or "upload").replace("\\", "/")).name
         suffix = Path(safe_filename).suffix.lower()
         if suffix not in {".pdf", ".docx", ".txt", ".md"}:
             raise HTTPException(status_code=400, detail="Supported files: PDF, DOCX, TXT and Markdown")
