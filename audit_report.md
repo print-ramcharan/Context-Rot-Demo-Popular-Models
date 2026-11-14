@@ -1,3 +1,5 @@
+> **Superseded:** This report describes an earlier implementation and is not an accurate inventory of the current `research/ieee-evaluation` branch. See [EVIDENCE_TRACE_AUDIT.md](EVIDENCE_TRACE_AUDIT.md) for the current evidence-trace audit and [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for benchmark execution status. Do not use the implementation-gap statements below as current facts.
+
 # System Audit: RAG Implementation
 
 ## A) "What’s Implemented" Summary
