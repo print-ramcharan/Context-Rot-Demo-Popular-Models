@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import axios from 'axios';
 import { UploadCloud, CheckCircle2, Loader2, AlertCircle, FileText, RefreshCw } from 'lucide-react';
-import { API_BASE, authHeaders } from '../../config';
+import { API_BASE, authHeaders, setAccessToken } from '../../config';
 
 export default function FileDropzone({ onUpload }) {
   const [status, setStatus] = useState('idle');
@@ -38,6 +38,10 @@ export default function FileDropzone({ onUpload }) {
       });
       onUpload?.(file);
     } catch (err) {
+      if (err.response?.status === 401) {
+        setAccessToken(null);
+        window.dispatchEvent(new Event('context-rot-auth-expired'));
+      }
       console.error('Upload error:', err);
       setStatus('error');
       setTimeout(() => setStatus('idle'), 3000);
