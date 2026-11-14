@@ -179,7 +179,7 @@ def main() -> None:
                 _paired(per_query[baseline], per_query[candidate], metric)
                 for metric in ("recall@10", "ndcg@10", "precision@10", "mrr@10", "map@10")
             ]
-            for baseline, candidate in (("B1", "B3"), ("B3", "B4"))
+            for baseline, candidate in (("B1", "B2"), ("B3", "B2"), ("B4", "B2"))
         }
 
     all_tests = [
