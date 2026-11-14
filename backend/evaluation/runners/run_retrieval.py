@@ -20,6 +20,9 @@ import time
 import hashlib
 import argparse
 import importlib.metadata
+import csv
+import random
+import statistics
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -31,6 +34,11 @@ from src.vector_store import VectorStore
 
 from ..datasets.load_beir import chunk_corpus, load_beir_dataset
 from ..metrics.retrieval_metrics import compute_query_metrics
+from ..metrics.statistical_tests import (
+    paired_bootstrap_ci,
+    wilcoxon_signed_rank_test,
+    holm_bonferroni,
+)
 from .retrieval_configs import CONFIGS, load_config
 logger = logging.getLogger(__name__)
 
@@ -110,7 +118,7 @@ def _dense_chunks(
     k: int,
     threshold: float,
 ) -> List[Dict[str, Any]]:
-    query_emb = embedding_generator.embed_text(query)
+    query_emb = embedding_generator.embed_query(query)
     results = vector_store.search(query_emb, k=k)
     chunks = []
     for i in range(len(results["chunks"])):
@@ -186,10 +194,15 @@ def run_dataset(
     chunks = chunk_corpus(corpus, chunk_size, overlap)
     texts = [c["text"] for c in chunks]
     metadata = [c["metadata"] for c in chunks]
+    embedding_texts = [
+        ("Section: " + " > ".join(item.get("metadata", {}).get("section_path", []))
+         + "\\n" + item["text"]).strip()
+        for item in chunks
+    ]
     dim = embedding_generator.get_embedding_dimension()
 
     vector_store = VectorStore(dimension=dim, index_type=index_type)
-    embeddings = _embed_chunks(embedding_generator, texts)
+    embeddings = _embed_chunks(embedding_generator, embedding_texts)
     vector_store.add(embeddings=embeddings, chunks=texts, metadata=metadata)
     bm25_index = BM25Index(texts, k1=1.5, b=0.75)
     retrievers = {
@@ -206,7 +219,16 @@ def run_dataset(
         reranker = CrossEncoderReranker(model_name=cfg["rerank_model"])
 
     per_query_records = []
-    for qid, query_text in queries.items():
+    latency_cfg = cfg.get("latency", {})
+    latency_sample_size = max(0, int(latency_cfg.get("sample_size", 30)))
+    latency_repeats = max(1, int(latency_cfg.get("repeats", 3)))
+    query_ids = sorted(queries)
+    sampled_ids = set(random.Random(int(cfg.get("seed", 42))).sample(
+        query_ids, min(latency_sample_size, len(query_ids))
+    )) if latency_sample_size else set()
+
+    for qid in query_ids:
+        query_text = queries[qid]
         for config_id, config in CONFIGS.items():
             config_start = time.perf_counter()
             retrieved_chunks, depth = _run_config_with_depth(
@@ -221,6 +243,24 @@ def run_dataset(
                 reranker,
             )
             config_ms = (time.perf_counter() - config_start) * 1000.0
+            latency_samples_ms = [config_ms]
+            if qid in sampled_ids:
+                for _ in range(latency_repeats - 1):
+                    repeat_start = time.perf_counter()
+                    _run_config_with_depth(
+                        query_text,
+                        config,
+                        chunks,
+                        vector_store,
+                        embedding_generator,
+                        bm25_index,
+                        cfg,
+                        retrievers.get(config_id),
+                        reranker,
+                    )
+                    latency_samples_ms.append(
+                        (time.perf_counter() - repeat_start) * 1000.0
+                    )
 
             parent_ids, scores, grades, parent_diag = _map_to_parent_records(
                 retrieved_chunks, qrels, qid, int(cfg["evaluation_depth"]), include_diagnostics=True
@@ -241,6 +281,9 @@ def run_dataset(
                 "scores": scores,
                 "grades": grades,
                 "retrieved_count": len(parent_ids),
+                "latency_samples_ms": [round(value, 3) for value in latency_samples_ms]
+                if qid in sampled_ids else [],
+                "latency_repeated": qid in sampled_ids,
                 "candidate_chunk_count": depth["candidate_chunk_count"],
                 "unique_parent_count_before_reranking": depth["unique_parent_count_before_reranking"],
                 "unique_parent_count_after_reranking": depth["unique_parent_count_after_reranking"],
@@ -399,6 +442,108 @@ def save_summary(summary: Dict[str, Any], results_dir: Path) -> None:
     logger.info("Saved aggregated results to %s", table_path)
 
 
+
+def save_paired_statistics(records: List[Dict[str, Any]], run_dir: Path) -> None:
+    """Compare B4 against B1-B3 with paired per-query bootstrap CIs and Wilcoxon tests."""
+    by_dataset: Dict[str, Dict[str, Dict[str, Dict[str, float]]]] = {}
+    for record in records:
+        by_dataset.setdefault(record["dataset"], {}).setdefault(
+            record["configuration"], {}
+        )[record["query_id"]] = record["metrics"]
+
+    metrics = ("recall@10", "ndcg@10", "mrr@10", "precision@10")
+    rows = []
+    for dataset, configurations in sorted(by_dataset.items()):
+        proposed = configurations.get("B4", {})
+        for metric in metrics:
+            metric_rows = []
+            for baseline_id in ("B1", "B2", "B3"):
+                baseline = configurations.get(baseline_id, {})
+                paired_ids = sorted(set(proposed) & set(baseline))
+                before = [float(baseline[qid][metric]) for qid in paired_ids]
+                after = [float(proposed[qid][metric]) for qid in paired_ids]
+                differences = [right - left for left, right in zip(before, after)]
+                ci_low, ci_high = paired_bootstrap_ci(
+                    differences,
+                    n_resamples=10000,
+                    confidence=0.95,
+                    seed=42,
+                ) if differences else (None, None)
+                test = wilcoxon_signed_rank_test(before, after)
+                metric_rows.append({
+                    "dataset": dataset,
+                    "comparison": f"B4-{baseline_id}",
+                    "metric": metric,
+                    "n_queries": len(paired_ids),
+                    "mean_paired_improvement": float(np.mean(differences)) if differences else None,
+                    "ci95_low": ci_low,
+                    "ci95_high": ci_high,
+                    "wilcoxon_statistic": test[0] if test else None,
+                    "p_value": test[1] if test else None,
+                    "holm_adjusted_p": None,
+                })
+            adjusted = holm_bonferroni([row["p_value"] for row in metric_rows])
+            for row, corrected in zip(metric_rows, adjusted):
+                row["holm_adjusted_p"] = corrected
+                rows.append(row)
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "paired_significance.json").write_text(
+        json.dumps({
+            "method": "paired bootstrap percentile 95% CI and two-sided Wilcoxon signed-rank",
+            "multiple_testing": "Holm-Bonferroni across B4-vs-B1/B2/B3 comparisons within each dataset and metric",
+            "positive_improvement": "B4 metric minus baseline metric",
+            "results": rows,
+        }, indent=2),
+        encoding="utf-8",
+    )
+    if rows:
+        with open(run_dir / "paired_significance.csv", "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+
+
+def save_latency_summary(records: List[Dict[str, Any]], run_dir: Path) -> None:
+    """Summarize repeated timings on a deterministic sample; quality uses all queries."""
+    grouped: Dict[tuple, List[float]] = {}
+    for record in records:
+        if not record.get("latency_repeated"):
+            continue
+        key = (record["dataset"], record["configuration"])
+        grouped.setdefault(key, []).extend(record.get("latency_samples_ms", []))
+
+    output = []
+    for (dataset, configuration), values in sorted(grouped.items()):
+        ordered = sorted(values)
+        output.append({
+            "dataset": dataset,
+            "configuration": configuration,
+            "sampled_queries": len({
+                record["query_id"] for record in records
+                if record["dataset"] == dataset
+                and record["configuration"] == configuration
+                and record.get("latency_repeated")
+            }),
+            "timing_observations": len(values),
+            "mean_ms": float(np.mean(values)) if values else None,
+            "median_ms": float(np.median(values)) if values else None,
+            "std_dev_ms": float(np.std(values, ddof=1)) if len(values) > 1 else 0.0,
+            "p95_ms": float(np.percentile(values, 95)) if values else None,
+            "p99_ms": float(np.percentile(values, 99)) if values else None,
+        })
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "latency_summary.json").write_text(
+        json.dumps({
+            "note": "Three repeated warm retrieval timings for a deterministic sample of queries; timings are descriptive and are not independent query samples.",
+            "results": output,
+        }, indent=2),
+        encoding="utf-8",
+    )
+
+
+
 def _git_commit(repo_root: Path) -> str:
     try:
         return subprocess.check_output(
@@ -467,16 +612,17 @@ def main() -> None:
     print(f"RUN_DIR={run_dir}")
 
     embedding_generator = EmbeddingGenerator(
-        model_name=embedding_cfg["model_name"], device=embedding_cfg.get("device", "cpu")
+        model_name=embedding_cfg["model_name"],
+        device=embedding_cfg.get("device", "cpu"),
+        query_instruction=embedding_cfg.get("query_instruction", ""),
     )
-    _write_run_metadata(cfg, results_dir, repo_root)
-
     all_summary = {}
+    all_records = []
     base_dir = Path(__file__).resolve().parents[2]
     for dataset_name in dataset_names:
         data_path = base_dir / "evaluation" / "data" / dataset_name
         trace_dir = results_dir / dataset_name
-        summary, _ = run_dataset(
+        summary, dataset_records = run_dataset(
             dataset_name=dataset_name,
             data_path=data_path,
             cfg=retrieval_cfg,
@@ -487,8 +633,13 @@ def main() -> None:
             trace_dir=trace_dir,
         )
         all_summary.update(summary)
+        all_records.extend(dataset_records)
         logger.info("Dataset %s summary: %s", dataset_name, summary)
     save_summary(all_summary, run_dir)
+    save_paired_statistics(all_records, run_dir)
+    save_latency_summary(all_records, run_dir)
+    _write_run_metadata(cfg, results_dir, repo_root)
+    print(f"RESULTS_DIR={run_dir}")
 
 
 if __name__ == "__main__":
