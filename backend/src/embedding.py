@@ -106,7 +106,11 @@ class EmbeddingGenerator:
         )
 
     def _hash_text(self, text: str, role: str) -> str:
-        payload = f"{self.model_name}::{role}::{text}".encode("utf-8")
+        query_config = (
+            f"{self.query_instruction}::{self.query_prompt_name}"
+            if role == "query" else ""
+        )
+        payload = f"{self.model_name}::{role}::{query_config}::{text}".encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
 
     def _encode_one(self, text: str, role: str) -> np.ndarray:
