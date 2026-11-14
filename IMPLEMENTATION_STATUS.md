@@ -154,30 +154,23 @@ unimplemented or unmeasured. Do not claim these results until completed.
 - The complete November 14 run `depth_audit_20261114_191803` can be reused for official retrieval metrics, paired bootstrap confidence intervals, Wilcoxon tests, Holm correction, and the corrected depth audit. No retrieval rerun is required to produce these outputs.
 - Added `evaluation/runners/run_resource_scalability.py` to measure index build time, embedding build time, BM25 build time, FAISS disk footprint, embedding bytes, estimated BM25 Python-object size, process RSS, and per-configuration retrieval latency over increasing SciFact/NFCorpus corpus fractions. It runs each scale in a separate subprocess. This is an experiment harness, not a completed result.
 
-### Commands for the outstanding execution
+### Commands for the completed BEIR run
 
-From `backend/`, after confirming the dataset files and model downloads are available:
-
-```bash
-python -m evaluation.runners.run_retrieval
-```
-
-Use the printed new `RUN_DIR`, then:
+These are post-processing only. Do not run `run_retrieval` for this existing
+benchmark:
 
 ```bash
-python -m evaluation.analyze_results --run-dir "<new RUN_DIR>"
-python -m evaluation.report_depth_audit --run-dir "<new RUN_DIR>"
+cd backend
+python -m evaluation.analyze_results \\
+  --run-dir evaluation/results/runs/depth_audit_20261114_191803
+python -m evaluation.report_depth_audit \\
+  --run-dir evaluation/results/runs/depth_audit_20261114_191803
 ```
 
-Run the new scalability experiment:
-
-```bash
-python -m evaluation.runners.run_resource_scalability \
-  --datasets scifact,nfcorpus \
-  --scales 0.10,0.25,0.50,1.00 \
-  --query-count 30 \
-  --output-dir evaluation/results/scalability
-```
+The analyzer writes official BEIR metrics, per-query metrics, paired bootstrap
+confidence intervals, Wilcoxon tests, Holm-adjusted p-values, and a provenance
+manifest to `processed_rank_preserving/`. The depth audit writes a separate
+paper-mapped report. Neither command performs retrieval or makes API calls.
 
 ### Remaining evidence not yet produced
 
