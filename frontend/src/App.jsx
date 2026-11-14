@@ -3,7 +3,7 @@ import Header from './components/Layout/Header';
 import FileDropzone from './components/Upload/FileDropzone';
 import QueryBar from './components/Chat/QueryBar';
 import ComparisonView from './components/Comparison/ComparisonView';
-import { API_BASE } from './config';
+import { API_BASE, authHeaders, getAccessToken, setAccessToken } from './config';
 import {
   ArrowRight,
   ArrowUpRight,
@@ -164,8 +164,15 @@ function WorkspaceTabs({ activeTab, onNavigate }) {
 }
 
 async function fetchJson(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, options);
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: authHeaders(options.headers || {}),
+  });
   const data = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    setAccessToken(null);
+    window.dispatchEvent(new Event('context-rot-auth-expired'));
+  }
   if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
   return data;
 }
@@ -900,8 +907,57 @@ function getRouteFromHash() {
   return rawHash.startsWith('app') || rawHash === 'evaluate' ? rawHash : 'home';
 }
 
+function LoginPage({ onLogin }) {
+  const [username, setUsername] = useState('demo');
+  const [password, setPassword] = useState('123456');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'Login failed');
+      setAccessToken(data.access_token);
+      onLogin(data.access_token);
+    } catch (value) {
+      setError(value.message || 'Unable to sign in');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <main className="main-content" style={{ minHeight: '75vh', display: 'grid', placeItems: 'center', padding: '32px 16px' }}>
+      <form className="premium-card form-stack" onSubmit={submit} style={{ width: 'min(100%, 420px)' }}>
+        <h1 className="workspace-title font-heading">Context Rot Lab</h1>
+        <p>Sign in to access the protected workspace.</p>
+        <label>Username<input className="eval-input" autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} required /></label>
+        <label>Password<input className="eval-input" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required /></label>
+        {error && <p className="evaluation-notice error-notice">{error}</p>}
+        <button className="btn-primary" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
+        <small>Development default: demo / 123456. Change these credentials through backend environment variables before deployment.</small>
+      </form>
+    </main>
+  );
+}
+
 export default function App() {
+  const [token, setToken] = useState(() => getAccessToken() || '');
   const [route, setRoute] = useState(getRouteFromHash());
+
+  useEffect(() => {
+    const expire = () => setToken('');
+    window.addEventListener('context-rot-auth-expired', expire);
+    return () => window.removeEventListener('context-rot-auth-expired', expire);
+  }, []);
   const [activeTab, setActiveTab] = useState(() => {
     const hash = getRouteFromHash();
     return hash.startsWith('app/') ? hash.slice(4) : 'overview';
@@ -964,10 +1020,14 @@ export default function App() {
     try {
       const response = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ user_query: query })
       });
 
+      if (response.status === 401) {
+        setAccessToken(null);
+        setToken('');
+      }
       if (!response.ok) throw new Error(`${type} query failed`);
 
       const reader = response.body.getReader();
@@ -1070,9 +1130,14 @@ export default function App() {
     await streamQuery('/query/standard', 'standard');
   };
 
+  if (!token) return <LoginPage onLogin={setToken} />;
+
   return (
     <div className="app-shell">
       <Header page={route.startsWith('app') ? 'app' : route} />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 24px' }}>
+        <button className="btn-secondary" type="button" onClick={() => { setAccessToken(null); setToken(''); }}>Sign out</button>
+      </div>
       <main className="main-content">
         {route.startsWith('app') ? (
           <WorkspacePage

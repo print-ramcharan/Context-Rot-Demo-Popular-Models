@@ -1,0 +1,66 @@
+{
+  "git_commit": "3561c798b5b932b4a2f5b0bbdd6d67fcba203926",
+  "config_sha256": "894a307162524a08757f47fb0e54cf1feeee9df59708e38d05c525cbad027df4",
+  "config": {
+    "datasets": [
+      "scifact",
+      "nfcorpus"
+    ],
+    "chunking": {
+      "chunk_size": 350,
+      "overlap": 50
+    },
+    "embedding": {
+      "model_name": "BAAI/bge-base-en-v1.5",
+      "device": "cpu",
+      "query_instruction": "Represent this sentence for searching relevant passages: "
+    },
+    "retrieval": {
+      "mode": "hybrid",
+      "candidate_pool_size": 100,
+      "evaluation_depth": 20,
+      "top_k": 100,
+      "dense_k": 100,
+      "bm25_k": 100,
+      "alpha": 0.5,
+      "similarity_threshold": 0.0,
+      "rerank_enabled": true,
+      "rerank_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "rerank_candidate_pool": 100,
+      "rerank_top_n": 20,
+      "query_cache_ttl_s": 300,
+      "query_cache_max_items": 10000
+    },
+    "index": {
+      "type": "cosine"
+    },
+    "latency": {
+      "sample_size": 30,
+      "repeats": 3
+    },
+    "results": {
+      "raw": "backend/evaluation/results/raw",
+      "processed": "backend/evaluation/results/processed",
+      "tables": "backend/evaluation/results/tables"
+    },
+    "seed": 42
+  },
+  "datasets": [
+    "scifact",
+    "nfcorpus"
+  ],
+  "dataset_checksums_sha256": {
+    "scifact": "db365efa78192b3a8ac516d108c7d9e373d903a2594f4802dfeecbf4a40f06c6",
+    "nfcorpus": "5065760f5932ae974a3156fd834e618b23ac362b9fc180ae50821a0534964cd4"
+  },
+  "created_at_utc": "2026-11-14T15:13:42Z",
+  "python_version": "3.9.6",
+  "platform": "macOS-26.5.2-arm64-arm-64bit",
+  "package_versions": {
+    "numpy": "2.0.2",
+    "sentence-transformers": "5.1.2",
+    "faiss-cpu": "1.13.0",
+    "beir": "2.2.0",
+    "torch": "2.8.0"
+  }
+}

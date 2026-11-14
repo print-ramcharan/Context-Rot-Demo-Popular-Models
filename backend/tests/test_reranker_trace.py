@@ -4,7 +4,7 @@ from src.reranker import CrossEncoderReranker
 
 
 class FakeCrossEncoder:
-    def predict(self, pairs):
+    def predict(self, pairs, **kwargs):
         # The second candidate is more relevant to the query.
         return [0.1, 0.9]
 

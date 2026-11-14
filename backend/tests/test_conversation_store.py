@@ -59,6 +59,7 @@ class TestStoreConversation:
 
     def test_store_returns_correct_keys(self, tmp_store, gen):
         result = tmp_store.store_conversation(
+            user_id="test-user",
             platform="chatgpt",
             session_id="sess-001",
             prompt="What is the capital of France?",
@@ -72,31 +73,34 @@ class TestStoreConversation:
 
     def test_store_creates_session_entry(self, tmp_store, gen):
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="gemini",
             session_id="sess-002",
             prompt="Tell me about Python.",
             response="Python is a programming language.",
             embedding_generator=gen,
         )
-        sessions = tmp_store.list_sessions()
+        sessions = tmp_store.list_sessions("test-user")
         ids = [s["session_id"] for s in sessions]
         assert "sess-002" in ids
 
     def test_store_multiple_messages_same_session(self, tmp_store, gen):
         for i in range(3):
             tmp_store.store_conversation(
+                user_id="test-user",
                 platform="claude",
                 session_id="sess-003",
                 prompt=f"Question {i}",
                 response=f"Answer {i}",
                 embedding_generator=gen,
             )
-        sessions = {s["session_id"]: s for s in tmp_store.list_sessions()}
+        sessions = {s["session_id"]: s for s in tmp_store.list_sessions("test-user")}
         assert sessions["sess-003"]["message_count"] == 3
 
     def test_store_empty_prompt_and_response_raises(self, tmp_store, gen):
         with pytest.raises(Exception):
             tmp_store.store_conversation(
+                user_id="test-user",
                 platform="chatgpt",
                 session_id="sess-empty",
                 prompt="   ",
@@ -112,6 +116,7 @@ class TestStoreConversation:
         store_dir = str(tmp_path / "persist_test")
         s1 = ConversationStore(storage_dir=store_dir)
         s1.store_conversation(
+            user_id="test-user",
             platform="chatgpt",
             session_id="sess-persist",
             prompt="Hello",
@@ -123,13 +128,14 @@ class TestStoreConversation:
         # Reload from disk
         s2 = ConversationStore(storage_dir=store_dir)
         assert len(s2._chunks) > 0
-        assert "sess-persist" in s2._sessions
+        assert "sess-persist" in [session["session_id"] for session in s2.list_sessions("test-user")]
 
 
 class TestRetrieveContext:
 
     def test_retrieve_returns_results(self, tmp_store, gen):
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="chatgpt",
             session_id="sess-r1",
             prompt="Explain neural networks",
@@ -137,6 +143,7 @@ class TestRetrieveContext:
             embedding_generator=gen,
         )
         results = tmp_store.retrieve_context(
+            user_id="test-user",
             query="What are neural networks?",
             embedding_generator=gen,
             top_k=3,
@@ -147,6 +154,7 @@ class TestRetrieveContext:
 
     def test_retrieve_empty_store_returns_empty(self, tmp_store, gen):
         results = tmp_store.retrieve_context(
+            user_id="test-user",
             query="anything",
             embedding_generator=gen,
         )
@@ -154,6 +162,7 @@ class TestRetrieveContext:
 
     def test_retrieve_result_has_required_fields(self, tmp_store, gen):
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="gemini",
             session_id="sess-r2",
             prompt="What is FAISS?",
@@ -161,6 +170,7 @@ class TestRetrieveContext:
             embedding_generator=gen,
         )
         results = tmp_store.retrieve_context(
+            user_id="test-user",
             query="FAISS similarity search",
             embedding_generator=gen,
             top_k=5,
@@ -172,6 +182,7 @@ class TestRetrieveContext:
 
     def test_platform_filter_works(self, tmp_store, gen):
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="chatgpt",
             session_id="s-gpt",
             prompt="From ChatGPT session",
@@ -179,6 +190,7 @@ class TestRetrieveContext:
             embedding_generator=gen,
         )
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="gemini",
             session_id="s-gem",
             prompt="From Gemini session",
@@ -186,6 +198,7 @@ class TestRetrieveContext:
             embedding_generator=gen,
         )
         results = tmp_store.retrieve_context(
+            user_id="test-user",
             query="session answer",
             embedding_generator=gen,
             top_k=10,
@@ -196,6 +209,7 @@ class TestRetrieveContext:
 
     def test_similarity_threshold_filters_low_scores(self, tmp_store, gen):
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="claude",
             session_id="sess-thresh",
             prompt="Completely unrelated gardening tips",
@@ -204,6 +218,7 @@ class TestRetrieveContext:
         )
         # With a very high threshold almost nothing should pass
         results = tmp_store.retrieve_context(
+            user_id="test-user",
             query="quantum physics equations",
             embedding_generator=gen,
             top_k=5,
@@ -216,6 +231,7 @@ class TestRetrieveContext:
     def test_top_k_respected(self, tmp_store, gen):
         for i in range(10):
             tmp_store.store_conversation(
+                user_id="test-user",
                 platform="chatgpt",
                 session_id=f"sess-topk-{i}",
                 prompt=f"Message {i} about machine learning",
@@ -223,6 +239,7 @@ class TestRetrieveContext:
                 embedding_generator=gen,
             )
         results = tmp_store.retrieve_context(
+            user_id="test-user",
             query="machine learning",
             embedding_generator=gen,
             top_k=3,
@@ -233,12 +250,13 @@ class TestRetrieveContext:
 class TestListSessions:
 
     def test_list_sessions_empty(self, tmp_store):
-        assert tmp_store.list_sessions() == []
+        assert tmp_store.list_sessions("test-user") == []
 
     def test_list_sessions_sorted_newest_first(self, tmp_store, gen):
         import time
         for platform in ("chatgpt", "gemini", "claude"):
             tmp_store.store_conversation(
+                user_id="test-user",
                 platform=platform,
                 session_id=f"sess-{platform}",
                 prompt="hello",
@@ -247,19 +265,20 @@ class TestListSessions:
             )
             time.sleep(0.01)  # ensure distinct timestamps
 
-        sessions = tmp_store.list_sessions()
+        sessions = tmp_store.list_sessions("test-user")
         timestamps = [s.get("last_updated", s.get("created_at")) for s in sessions]
         assert timestamps == sorted(timestamps, reverse=True)
 
     def test_list_sessions_contains_metadata(self, tmp_store, gen):
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="chatgpt",
             session_id="sess-meta",
             prompt="test",
             response="test response",
             embedding_generator=gen,
         )
-        sessions = tmp_store.list_sessions()
+        sessions = tmp_store.list_sessions("test-user")
         s = sessions[0]
         for key in ("session_id", "platform", "message_count", "chunk_count"):
             assert key in s, f"Missing key: {key}"
@@ -269,37 +288,40 @@ class TestDeleteSession:
 
     def test_delete_existing_session(self, tmp_store, gen):
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="chatgpt",
             session_id="sess-del",
             prompt="delete me",
             response="sure",
             embedding_generator=gen,
         )
-        result = tmp_store.delete_session("sess-del")
+        result = tmp_store.delete_session("sess-del", "test-user")
         assert result["deleted"] is True
 
-        ids = [s["session_id"] for s in tmp_store.list_sessions()]
+        ids = [s["session_id"] for s in tmp_store.list_sessions("test-user")]
         assert "sess-del" not in ids
 
     def test_delete_nonexistent_session(self, tmp_store):
-        result = tmp_store.delete_session("nonexistent-id")
+        result = tmp_store.delete_session("nonexistent-id", "test-user")
         assert result["deleted"] is False
 
     def test_delete_removes_chunks_from_index(self, tmp_store, gen):
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="chatgpt",
             session_id="sess-del2",
             prompt="some content about python",
             response="python is great",
             embedding_generator=gen,
         )
-        before = tmp_store.get_stats()["total_chunks"]
-        tmp_store.delete_session("sess-del2")
-        after = tmp_store.get_stats()["total_chunks"]
+        before = tmp_store.get_stats("test-user")["total_chunks"]
+        tmp_store.delete_session("sess-del2", "test-user")
+        after = tmp_store.get_stats("test-user")["total_chunks"]
         assert after < before
 
     def test_delete_does_not_affect_other_sessions(self, tmp_store, gen):
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="chatgpt",
             session_id="sess-keep",
             prompt="keep this",
@@ -307,29 +329,32 @@ class TestDeleteSession:
             embedding_generator=gen,
         )
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="gemini",
             session_id="sess-remove",
             prompt="remove this",
             response="removing",
             embedding_generator=gen,
         )
-        tmp_store.delete_session("sess-remove")
+        tmp_store.delete_session("sess-remove", "test-user")
 
-        ids = [s["session_id"] for s in tmp_store.list_sessions()]
+        ids = [s["session_id"] for s in tmp_store.list_sessions("test-user")]
         assert "sess-keep" in ids
         assert "sess-remove" not in ids
 
     def test_retrieve_after_delete_excludes_deleted(self, tmp_store, gen):
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="chatgpt",
             session_id="sess-del3",
             prompt="very specific deleted content about flying elephants",
             response="flying elephants are fictional",
             embedding_generator=gen,
         )
-        tmp_store.delete_session("sess-del3")
+        tmp_store.delete_session("sess-del3", "test-user")
 
         results = tmp_store.retrieve_context(
+            user_id="test-user",
             query="flying elephants",
             embedding_generator=gen,
             top_k=10,
@@ -341,21 +366,22 @@ class TestDeleteSession:
 class TestGetStats:
 
     def test_stats_structure(self, tmp_store):
-        stats = tmp_store.get_stats()
+        stats = tmp_store.get_stats("test-user")
         for key in ("total_chunks", "total_sessions", "index_size", "storage_dir"):
             assert key in stats
 
     def test_stats_reflect_stored_data(self, tmp_store, gen):
-        assert tmp_store.get_stats()["total_sessions"] == 0
+        assert tmp_store.get_stats("test-user")["total_sessions"] == 0
 
         tmp_store.store_conversation(
+            user_id="test-user",
             platform="chatgpt",
             session_id="sess-stats",
             prompt="test",
             response="test",
             embedding_generator=gen,
         )
-        stats = tmp_store.get_stats()
+        stats = tmp_store.get_stats("test-user")
         assert stats["total_sessions"] == 1
         assert stats["total_chunks"] >= 1
         assert stats["index_size"] == stats["total_chunks"]

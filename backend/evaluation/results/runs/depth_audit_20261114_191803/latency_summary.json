@@ -1,0 +1,93 @@
+{
+  "note": "Three repeated warm retrieval timings for a deterministic sample of queries; timings are descriptive and are not independent query samples.",
+  "results": [
+    {
+      "dataset": "nfcorpus",
+      "configuration": "B1",
+      "sampled_queries": 30,
+      "timing_observations": 90,
+      "mean_ms": 2.8398666666666665,
+      "median_ms": 1.0335,
+      "std_dev_ms": 4.305225931249268,
+      "p95_ms": 14.569599999999985,
+      "p99_ms": 17.84983
+    },
+    {
+      "dataset": "nfcorpus",
+      "configuration": "B2",
+      "sampled_queries": 30,
+      "timing_observations": 90,
+      "mean_ms": 0.9576888888888888,
+      "median_ms": 0.872,
+      "std_dev_ms": 0.42905476574673723,
+      "p95_ms": 1.8991499999999997,
+      "p99_ms": 2.1419799999999998
+    },
+    {
+      "dataset": "nfcorpus",
+      "configuration": "B3",
+      "sampled_queries": 30,
+      "timing_observations": 90,
+      "mean_ms": 3.249766666666666,
+      "median_ms": 2.537,
+      "std_dev_ms": 2.235307947263894,
+      "p95_ms": 8.24375,
+      "p99_ms": 10.010869999999999
+    },
+    {
+      "dataset": "nfcorpus",
+      "configuration": "B4",
+      "sampled_queries": 30,
+      "timing_observations": 90,
+      "mean_ms": 4593.512166666667,
+      "median_ms": 4362.1785,
+      "std_dev_ms": 1870.405257253092,
+      "p95_ms": 6614.010499999999,
+      "p99_ms": 11139.956989999997
+    },
+    {
+      "dataset": "scifact",
+      "configuration": "B1",
+      "sampled_queries": 30,
+      "timing_observations": 90,
+      "mean_ms": 12.143888888888892,
+      "median_ms": 10.936,
+      "std_dev_ms": 6.913739830001836,
+      "p95_ms": 27.19535,
+      "p99_ms": 29.07217
+    },
+    {
+      "dataset": "scifact",
+      "configuration": "B2",
+      "sampled_queries": 30,
+      "timing_observations": 90,
+      "mean_ms": 1.0180777777777776,
+      "median_ms": 1.0045,
+      "std_dev_ms": 0.3124556679665844,
+      "p95_ms": 1.6160999999999994,
+      "p99_ms": 2.09461
+    },
+    {
+      "dataset": "scifact",
+      "configuration": "B3",
+      "sampled_queries": 30,
+      "timing_observations": 90,
+      "mean_ms": 13.54191111111111,
+      "median_ms": 11.6375,
+      "std_dev_ms": 7.997350875491073,
+      "p95_ms": 29.00125,
+      "p99_ms": 33.00322999999999
+    },
+    {
+      "dataset": "scifact",
+      "configuration": "B4",
+      "sampled_queries": 30,
+      "timing_observations": 90,
+      "mean_ms": 2920.0553,
+      "median_ms": 2912.6099999999997,
+      "std_dev_ms": 867.6665151816254,
+      "p95_ms": 4308.3324999999995,
+      "p99_ms": 5093.260179999999
+    }
+  ]
+}

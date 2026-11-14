@@ -1,21 +1,21 @@
-# Experiments configuration for the IEEE IEEE-revison retrieval evaluation.
-# Commit + sha256 of this file must be recorded for every experiment run.
+# Reproducible BEIR retrieval benchmark configuration.
+# Every run records this file's SHA-256, the Git commit and dataset checksums.
 
 datasets:
   - scifact
   - nfcorpus
 
-# Chunking used to convert BEIR documents into retrieval chunks.
+# Match the production structure-aware word chunker.
 chunking:
-  chunk_size: 400
-  overlap: 80
+  chunk_size: 350
+  overlap: 50
 
-# Dense embedding model used for evaluation.
+# Match the application embedding model and query instruction.
 embedding:
-  model_name: "all-MiniLM-L6-v2"
+  model_name: "BAAI/bge-base-en-v1.5"
   device: "cpu"
+  query_instruction: "Represent this sentence for searching relevant passages: "
 
-# Shared retrieval hyperparameters (match backend/config.yaml).
 retrieval:
   mode: "hybrid"
   candidate_pool_size: 100
@@ -24,7 +24,7 @@ retrieval:
   dense_k: 100
   bm25_k: 100
   alpha: 0.5
-  similarity_threshold: 0.05
+  similarity_threshold: 0.0
   rerank_enabled: true
   rerank_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
   rerank_candidate_pool: 100
@@ -32,15 +32,18 @@ retrieval:
   query_cache_ttl_s: 300
   query_cache_max_items: 10000
 
-# Index type must match the production FAISS mode (cosine / IndexFlatIP).
 index:
   type: "cosine"
 
-# Output directories.
+latency:
+  # Quality is evaluated on every official test query. Repeated timings use a
+  # deterministic sample to avoid multiplying the full reranking workload.
+  sample_size: 30
+  repeats: 3
+
 results:
   raw: "backend/evaluation/results/raw"
   processed: "backend/evaluation/results/processed"
   tables: "backend/evaluation/results/tables"
 
-# Deterministic seed for bootstrap/resampling.
 seed: 42

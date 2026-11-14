@@ -230,6 +230,11 @@
       font-size: 12px;
     }
     #main { display: none; }
+    .auth-panel { display:none; padding:18px 16px; border-bottom:1px solid #1e1e2e; }
+    .auth-panel label { display:block; color:#a6adc8; font-size:12px; margin:10px 0 5px; }
+    .auth-panel input { width:100%; padding:8px 10px; border:1px solid #45475a; border-radius:6px; background:#1e1e2e; color:#cdd6f4; }
+    .auth-panel button { width:100%; margin-top:12px; padding:9px; border:0; border-radius:7px; background:#8b5cf6; color:white; font-weight:600; cursor:pointer; }
+    .auth-error { color:#f38ba8; font-size:11px; margin-top:8px; }
   </style>
 </head>
 <body>
@@ -246,6 +251,16 @@
 
   <!-- Loading state -->
   <div id="loading">Loading…</div>
+
+  <form id="login-panel" class="auth-panel">
+    <div class="section-label">Sign in to conversation memory</div>
+    <label for="auth-username">Username</label>
+    <input id="auth-username" value="demo" autocomplete="username" required />
+    <label for="auth-password">Password</label>
+    <input id="auth-password" type="password" value="123456" autocomplete="current-password" required />
+    <button type="submit" id="auth-submit">Sign in</button>
+    <div id="auth-error" class="auth-error"></div>
+  </form>
 
   <!-- Main content (shown after data loads) -->
   <div id="main">
@@ -328,6 +343,7 @@
     <!-- Footer actions -->
     <div class="footer">
       <button class="btn" id="btn-refresh">↻ Refresh</button>
+      <button class="btn" id="btn-sign-out">Sign out</button>
       <button class="btn danger" id="btn-clear-all">🗑 Clear all</button>
     </div>
 

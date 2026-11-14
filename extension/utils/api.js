@@ -12,20 +12,35 @@
  * because the module scope shares them via the import binding.
  */
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "http://127.0.0.1:8001";
 const TIMEOUT_MS = 5000;
 
 // ── Internal fetch helper ─────────────────────────────────────────────────────
+
+async function getAccessToken() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get("contextrot_auth", (result) => {
+        resolve(result?.contextrot_auth?.access_token || "");
+      });
+    } catch (_) {
+      resolve("");
+    }
+  });
+}
 
 async function apiFetch(path, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
+    const token = await getAccessToken();
+    const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
       signal: controller.signal,
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      headers,
     });
     clearTimeout(timer);
 

@@ -130,15 +130,14 @@ class ContextAssembler:
         sorted_chunks = sorted(chunks, key=lambda x: x.get('score', 0), reverse=True)
         
         for chunk in sorted_chunks:
-            chunk_len = len(chunk['text'])
+            text = chunk.get("text", "")
+            chunk_len = len(text)
+            if not text or chunk_len == 0:
+                continue
+            # Never shear a source passage mid-sentence. Skip an item that does
+            # not fit and continue looking for smaller complete evidence chunks.
             if current_length + chunk_len > max_length:
-                if current_length == 0:
-                    # If first chunk is already too long, take a prefix
-                    valid_chunks.append({
-                        **chunk,
-                        'text': chunk['text'][:max_length]
-                    })
-                break
+                continue
             valid_chunks.append(chunk)
             current_length += chunk_len
             
