@@ -7,7 +7,7 @@ embedding:
   # BGE-base is a practical CPU/MPS model for an 8 GB Mac.
   # Qwen/Qwen3-Embedding-0.6B can be selected after checking local memory.
   model_name: "BAAI/bge-base-en-v1.5"
-  device: "mps"
+  device: null
   query_instruction: "Represent this sentence for searching relevant passages: "
   cache_path: "cache/embeddings.sqlite"
   cache_max_items: 200000
