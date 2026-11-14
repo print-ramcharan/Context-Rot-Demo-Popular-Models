@@ -50,13 +50,13 @@ app = FastAPI(
 
 # Explicit browser-origin allowlist. Configure CORS_ALLOWED_ORIGINS in deployment.
 _default_origins = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
-allowed_origins = [
-    origin.strip() for origin in os.getenv(
-        "CORS_ALLOWED_ORIGINS", _default_origins
-    ).split(",") if origin.strip()
-]
-if os.getenv("APP_ENV", "development").lower() == "production" and not allowed_origins:
+cors_setting = os.getenv("CORS_ALLOWED_ORIGINS")
+if os.getenv("APP_ENV", "development").lower() == "production" and not cors_setting:
     raise RuntimeError("CORS_ALLOWED_ORIGINS must be configured in production")
+allowed_origins = [
+    origin.strip() for origin in (cors_setting or _default_origins).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -900,9 +900,18 @@ async def upload_file(
         if suffix not in {".pdf", ".docx", ".txt", ".md"}:
             raise HTTPException(status_code=400, detail="Supported files: PDF, DOCX, TXT and Markdown")
 
+        max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
         temp_path = DATA_DIR / f".upload-{time.time_ns()}{suffix}"
+        uploaded_bytes = 0
         with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while True:
+                upload_chunk = await file.read(1024 * 1024)
+                if not upload_chunk:
+                    break
+                uploaded_bytes += len(upload_chunk)
+                if uploaded_bytes > max_upload_bytes:
+                    raise HTTPException(status_code=413, detail="Upload exceeds the configured size limit")
+                buffer.write(upload_chunk)
 
         extract_start = time.perf_counter()
         text_content = extract_document(temp_path)
