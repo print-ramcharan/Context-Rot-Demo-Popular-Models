@@ -57,6 +57,10 @@ allowed_origins = [
     origin.strip() for origin in (cors_setting or _default_origins).split(",")
     if origin.strip()
 ]
+if "*" in allowed_origins:
+    raise RuntimeError("Wildcard CORS origins are not permitted")
+if os.getenv("APP_ENV", "development").lower() == "production" and not allowed_origins:
+    raise RuntimeError("CORS_ALLOWED_ORIGINS must contain at least one explicit origin")
 # All API routes require a signed bearer token except health and login.
 @app.middleware("http")
 async def authenticate_private_routes(request: Request, call_next):
