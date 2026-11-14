@@ -266,5 +266,6 @@ class ConversationStore:
         return {
             "total_chunks": owned_chunks,
             "total_sessions": len(owned_sessions),
+            "index_size": owned_chunks,
             "storage_dir": str(self.storage_dir),
         }
