@@ -1,22 +1,29 @@
 # Reviewer-response matrix
 
-| Reviewer concern | Evidence or implementation | Status |
-|---|---|---|
-| Compare sparse, dense, hybrid, and reranked retrieval | B1-B4 runner, SciFact/NFCorpus raw records and aggregate metrics | Historical measurements; corrected rerun still required |
-| Use standard retrieval metrics | Official BEIR aggregate analysis for nDCG@10, Recall@10, and P@10 | Implemented; corrected run pending |
-| Align paired statistics with reported metrics | Revised analyzer computes per-query graded-gain metrics from the same qrels and applies Holm correction | Implemented; corrected run pending |
-| Evaluate Recall@20 fairly | B4 reranks up to 20 unique parent documents and records returned depth | Implemented; corrected run pending |
-| Evaluate cross-platform external memory | Runner reuses ConversationStore and measures Recall@K, MRR, cross-platform Recall@K, latency, and local store size | Harness implemented; labelled representative dataset and execution required |
-| Evaluate long-term memory retrieval | LongMemEval runner ingests each question's history into an isolated store and measures gold evidence-session Recall@K/MRR | Harness implemented; official dataset download and execution required |
-| Evaluate long-term answer quality | Official LongMemEval answer generation/judging not integrated or run | Not completed |
-| Report context degradation | No controlled history-length experiment is present | Not completed |
-| Compare Longformer and advanced RAG systems | No completed fair implementation or run is present | Not completed |
-| Measure latency, memory, and scalability | Retrieval latency and local store-size measurements are instrumented; no RAM/concurrency/scaling study is complete | Partial |
-| Address authentication, encryption, retention, and isolation | No completed end-to-end security control suite | Not completed |
-| Provide reproducibility information | Commands, model identifiers, configuration, output paths, and provenance rules documented | Implemented; record environment for each new run |
+This matrix separates completed implementation, executed evidence, and unresolved experiments.
 
-The checked-in `cross_platform_memory.example.jsonl` is a smoke-test fixture,
-not a statistically meaningful dataset. Do not cite its scores as evidence.
-The LongMemEval runner reports evidence-session retrieval, not QA accuracy.
-This matrix deliberately distinguishes implementation from completed evidence.
-An item marked as a limitation must not be described as an experimental result.
+| Reviewer concern | Repository evidence / action | Status |
+|---|---|---|
+| Standard retrieval benchmarks | Corrected BEIR run on SciFact (300 queries) and NFCorpus (323 queries), four paper-mapped retrieval configurations | Measured |
+| Sparse, dense, hybrid, and reranked comparison | B1 BM25; B2 hybrid + cross-encoder; B3 hybrid without reranker; B4 dense FAISS | Measured |
+| Quantitative retrieval metrics | nDCG@10, MAP@10, Recall@10, Precision@10, MRR@10 | Measured |
+| Statistical validation | Paired per-query tests, bootstrap confidence intervals, Wilcoxon tests, Holm correction | Measured; dataset-dependent outcomes |
+| Retrieval latency | 30 sampled queries × 3 warm observations; mean/median/P95/P99 | Reported in manuscript; keep distinct from generation latency |
+| Fair reranking implementation | Cross-encoder scores candidate chunks before parent-document collapse; regression coverage exists | Implemented; corrected run completed |
+| Reproducibility | Timestamped run, metadata, model IDs, candidate pool, seed, output artifacts, post-processing command | Substantially addressed |
+| Long-context / context-degradation QA | Controlled runner supports increasing history sizes and four conditions; only a two-question pilot has been executed | Harness implemented; full evidence pending |
+| Longformer / LED / advanced RAG comparison | No matched implementations and measurements | Unresolved |
+| Cross-platform memory benchmark | Runner exists; checked-in JSONL is only a smoke fixture | Harness implemented; labelled evaluation data/results pending |
+| Memory and scalability | Resource runner measures build/index sizes, RSS and latency at corpus scales | Harness implemented; execution/results pending |
+| Privacy and security | Current API has permissive CORS and conversation-store files use pickle; authentication, tenant isolation, encryption and deletion controls are not established by the current code | Unresolved; must not claim secure deployment |
+| Novelty | Contribution framed as an integrated, evaluated engineering pipeline, not a new BM25/dense/RRF/reranking algorithm | Reframing required |
+
+## Important result interpretation
+
+- SciFact: B4 (dense FAISS) is highest on all five @10 metrics.
+- NFCorpus: B4 is highest on nDCG@10, Recall@10 and Precision@10; B3 is highest on MAP@10; B2 is highest on MRR@10.
+- B2 improves over B1 on both datasets, but B2 is not universally best.
+- The LongMemEval two-question pilot does not establish end-to-end answer-quality improvement or context-degradation mitigation.
+- A runnable benchmark or test harness is evidence of implementation, not evidence that the experiment has been executed.
+
+Use `EXPERIMENTAL_RESULTS.md` for exact reported values and limitations.
