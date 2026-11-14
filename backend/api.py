@@ -982,6 +982,11 @@ async def handle_query_rag(request: QueryRequest):
                 use_cache=False,
             )
             retrieve_time = (time.perf_counter() - retrieve_start) * 1000
+            retrieved_chunks = retriever.expand_parent_context(
+                retrieved_chunks,
+                max_neighbors=1,
+                max_total=20,
+            )
             retrieved_chunks = retriever.deduplicate_chunks(
                 retrieved_chunks, overlap_threshold=0.82
             )
