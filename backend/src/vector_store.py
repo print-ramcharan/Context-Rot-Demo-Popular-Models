@@ -139,6 +139,9 @@ class VectorStore:
 
     def load(self, directory: str):
         path = Path(directory)
+        backup_path = path.with_name(path.name + ".bak")
+        if not path.exists() and backup_path.exists():
+            os.replace(backup_path, path)
         with open(path / "config.json", "r") as handle:
             config = json.load(handle)
         loaded_dimension = int(config["dimension"])
@@ -154,6 +157,8 @@ class VectorStore:
             loaded_metadata = pickle.load(handle)
         if loaded_index.d != loaded_dimension:
             raise ValueError("Saved FAISS index dimension does not match config")
+        if "total_vectors" in config and loaded_index.ntotal != int(config["total_vectors"]):
+            raise ValueError("Saved FAISS vector count does not match snapshot metadata")
         if loaded_index.ntotal != len(loaded_chunks) or len(loaded_chunks) != len(loaded_metadata):
             raise ValueError(
                 "Saved vector store is inconsistent: index={}, chunks={}, metadata={}".format(
