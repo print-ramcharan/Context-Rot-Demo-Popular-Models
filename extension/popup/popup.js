@@ -16,6 +16,8 @@ function sendMessage(msg) {
 }
 
 // ── Storage helpers (inline — popup can't import utils/storage.js directly) ──
+const API_BASE = "http://127.0.0.1:8001";
+const AUTH_KEY = "contextrot_auth";
 const PREFS_KEY = "contextrot_prefs";
 const DEFAULT_PREFS = {
   captures: { chatgpt: true, gemini: true, claude: true },
@@ -72,21 +74,42 @@ const btnRefresh     = $("btn-refresh");
 const btnClearAll    = $("btn-clear-all");
 const loadingEl      = $("loading");
 const mainEl         = $("main");
+const loginPanel      = $("login-panel");
+const loginForm       = $("login-panel");
+const loginError      = $("auth-error");
+const loginSubmit     = $("auth-submit");
+const btnSignOut      = $("btn-sign-out");
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
-  const [prefs, healthReply, statsReply, sessionsReply] = await Promise.all([
+  const authState = await new Promise(resolve => chrome.storage.local.get(AUTH_KEY, resolve));
+  const token = authState?.[AUTH_KEY]?.access_token;
+  const healthReply = await sendMessage({ type: "HEALTH" });
+  const alive = healthReply?.data?.alive ?? false;
+  statusDot.classList.toggle("online", alive);
+  statusDot.classList.toggle("offline", !alive);
+  statusDot.title = alive ? "Backend online" : "Backend offline — start uvicorn";
+
+  if (!token) {
+    loadingEl.style.display = "none";
+    mainEl.style.display = "none";
+    loginPanel.style.display = "block";
+    return;
+  }
+
+  const [prefs, statsReply, sessionsReply] = await Promise.all([
     loadPrefs(),
-    sendMessage({ type: "HEALTH" }),
     sendMessage({ type: "STATS"  }),
     sendMessage({ type: "LIST"   }),
   ]);
-
-  // Backend status
-  const alive = healthReply?.data?.alive ?? false;
-  statusDot.classList.toggle("online",  alive);
-  statusDot.classList.toggle("offline", !alive);
-  statusDot.title = alive ? "Backend online" : "Backend offline — start uvicorn";
+  if (!statsReply?.ok || !sessionsReply?.ok) {
+    await new Promise(resolve => chrome.storage.local.remove(AUTH_KEY, resolve));
+    loginError.textContent = "Sign-in expired. Please sign in again.";
+    loadingEl.style.display = "none";
+    mainEl.style.display = "none";
+    loginPanel.style.display = "block";
+    return;
+  }
 
   // Stats
   if (statsReply?.ok) {
@@ -107,6 +130,7 @@ async function init() {
 
   // Show main
   loadingEl.style.display = "none";
+  loginPanel.style.display = "none";
   mainEl.style.display    = "block";
 }
 
@@ -215,4 +239,39 @@ function escHtml(str) {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  loginSubmit.disabled = true;
+  loginError.textContent = "";
+  try {
+    const response = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: $("auth-username").value,
+        password: $("auth-password").value,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || "Sign-in failed");
+    await new Promise(resolve => chrome.storage.local.set({
+      [AUTH_KEY]: { access_token: data.access_token },
+    }, resolve));
+    loginPanel.style.display = "none";
+    loadingEl.style.display = "block";
+    await init();
+  } catch (error) {
+    loginError.textContent = error.message || "Sign-in failed";
+  } finally {
+    loginSubmit.disabled = false;
+  }
+});
+
+btnSignOut.addEventListener("click", async () => {
+  await new Promise(resolve => chrome.storage.local.remove(AUTH_KEY, resolve));
+  mainEl.style.display = "none";
+  loginPanel.style.display = "block";
+  loginError.textContent = "";
+});
+
 init().catch(console.error);
