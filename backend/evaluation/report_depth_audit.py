@@ -7,6 +7,8 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from evaluation.analyze_results import _records, _resolve_source_mapping
+
 def _returned_count(item):
     return int(item.get("retrieved_count", item.get("returned_count", 0)))
 
@@ -15,12 +17,12 @@ def main() -> None:
     parser.add_argument("--run-dir", type=Path, required=True)
     args = parser.parse_args()
     raw = args.run_dir / "raw"
+    datasets = ("scifact", "nfcorpus")
+    source_mapping, mapping_resolution = _resolve_source_mapping(raw, datasets)
     records = {}
-    for dataset in ("scifact", "nfcorpus"):
+    for dataset in datasets:
         for config in ("B1", "B2", "B3", "B4"):
-            paths = sorted((raw / dataset).glob(f"{dataset}_{config}_*.json"))
-            items = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
-            records[(dataset, config)] = items
+            records[(dataset, config)] = _records(raw, dataset, source_mapping[config])
 
     lines = [
         "# Depth audit report",
@@ -28,6 +30,7 @@ def main() -> None:
         f"Run directory: `{args.run_dir}`",
         "",
         "Previous fixed-depth results are preserved separately and are not overwritten.",
+        f"Configuration mapping: {mapping_resolution}.",
         "",
         "| Dataset | Config | Queries | Exactly 20 | Shortfall queries | Returned-count distribution |",
         "|---|---:|---:|---:|---:|---|",
@@ -62,8 +65,8 @@ def main() -> None:
             "before using the aggregate metrics from this run.",
         ]
     )
-    official = args.run_dir / "processed" / "official_beir_metrics.json"
-    significance = args.run_dir / "processed" / "paired_significance.json"
+    official = args.run_dir / "processed_rank_preserving" / "official_beir_metrics.json"
+    significance = args.run_dir / "processed_rank_preserving" / "paired_significance.json"
     if official.exists():
         lines.extend(
             [
