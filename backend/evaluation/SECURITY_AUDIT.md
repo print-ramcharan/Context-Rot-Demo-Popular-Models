@@ -10,16 +10,25 @@ python -m evaluation.security_posture_audit --root . \
   --output evaluation/results/security_posture_audit.json
 ```
 
-The command inspects the current API and conversation-store source for a small set of high-risk patterns: wildcard CORS, absence of recognizable FastAPI authentication dependencies, pickle deserialization/serialization, and missing session ownership in the storage interface.
+The scanner checks source patterns for wildcard CORS, recognizable API authentication, pickle persistence, and user ownership in the conversation store. Any finding produces exit status 1.
 
-A critical finding produces exit status 1. The JSON report records each finding, severity, file, and recommended action.
+## Current implementation branch
 
-## Current source-level findings
+The earlier audit findings prompted these code changes:
 
-The current prototype source contains wildcard CORS, does not show a recognized API authentication dependency, and persists conversation chunks/metadata through Python pickle. Its store interface accepts a session ID without a demonstrated authenticated user/tenant ownership check. These findings are intentionally surfaced by the scanner.
+- Private API routes now require a signed, expiring bearer token; `/health` and `/auth/login` are public.
+- The development account defaults to `demo / 123456`; the default is disabled outside development.
+- CORS uses explicit configured origins and rejects wildcard origins.
+- Conversation memory is scoped to the authenticated principal for retrieval, listing, deletion, and statistics.
+- Conversation text and metadata use schema-checked JSON rather than pickle.
+- Upload size is bounded and conversation-store operations are synchronized within one process.
 
-## Scope and limitations
+The static audit and regression tests have been updated to check for these implementation patterns. They have **not yet been executed against the latest branch commit**. Run `bash evaluation/run_reviewer_checks.sh` from `backend/` before treating the implementation as verified.
 
-This is an executable static source audit with unit tests, not a penetration test and not a security fix. It does not inspect runtime deployment configuration, reverse proxies, secrets management, TLS termination, database permissions, or actual authorization behavior. A clean scan would not establish that the application is secure.
+## Remaining risks and limitations
 
-Before using the prototype with sensitive or multi-user data, implement and test authenticated identity, per-session ownership checks, tenant isolation, explicit CORS allowlists, non-executable schema-validated persistence, encryption, retention/deletion behavior, and prompt-injection/data-exfiltration defenses.
+This is a source-level guardrail, not a penetration test or proof of security. It does not verify runtime authorization behavior, reverse proxies, TLS termination, secret rotation, database permissions, malware scanning, or infrastructure configuration.
+
+The current identity setup is one configured application account, not a user directory. Conversation memory has principal-level filtering, but the uploaded document corpus remains global/shared. Local conversation data is not encrypted at rest. Token revocation, distributed rate limiting, MFA, enterprise identity, full tenant isolation, retention enforcement, and production deployment hardening remain open.
+
+Do not describe this prototype as fully multi-tenant, security-certified, or production-secure. See `SECURITY_AND_SCALABILITY.md` for the proposed scale-out architecture.
