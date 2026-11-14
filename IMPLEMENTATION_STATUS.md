@@ -29,14 +29,15 @@ completed command. Unrun experiments are not represented as results.
   the requested evaluation depth, rather than stopping at 100 chunks.
 - All configurations are evaluated at a shared 20-parent depth; any genuine
   shortfall is reported rather than padded.
-- B4 now reranks the original candidate chunks before parent-document
-  aggregation. It scores title-plus-passage text, then retains the highest
+- The historical runner mapping assigned reranking to B4. In the current
+  paper-aligned mapping, this same chunk-before-parent reranking path is B2.
+  It scores title-plus-passage text, then retains the highest
   cross-encoder-scoring passage for each parent. A regression test verifies
   that alternate passages from the same parent reach the cross-encoder.
 - Reranking latency is measured during the actual B4 pass rather than by
   running a second, duplicate reranking pass for timing.
-- B4 now fails explicitly if the cross-encoder failed to load, rather than
-  silently producing an unreranked result under the reranker label.
+- The paper-aligned B2 now fails explicitly if the cross-encoder failed to
+  load, rather than silently producing an unreranked result under the reranker label.
 - The per-query NDCG implementation uses graded gains and the complete query
   qrels for its ideal ranking, aligning the CSV metric with standard BEIR
   NDCG rather than deriving the ideal ranking from retrieved documents.
