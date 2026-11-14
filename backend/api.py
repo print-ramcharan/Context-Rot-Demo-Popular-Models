@@ -60,6 +60,8 @@ class UploadResponse(BaseModel):
     message: str
     chunks_created: int = 0
     embeddings_stored: int = 0
+    document_id: Optional[str] = None
+    duplicate: bool = False
     timings_ms: Optional[dict] = None
 
 class StoreConversationRequest(BaseModel):
@@ -857,6 +859,8 @@ async def upload_file(
                 message="Document content is already indexed",
                 chunks_created=0,
                 embeddings_stored=0,
+                document_id=document_id,
+                duplicate=True,
                 timings_ms={"total_ms": (time.perf_counter() - extract_start) * 1000}
             )
 
@@ -898,6 +902,8 @@ async def upload_file(
             message=f"File '{file.filename}' ingested successfully",
             chunks_created=len(chunk_dicts),
             embeddings_stored=len(embeddings),
+            document_id=document_id,
+            duplicate=False,
             timings_ms={"total_ms": latency}
         )
     except Exception as e:
