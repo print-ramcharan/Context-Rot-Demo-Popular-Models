@@ -557,6 +557,55 @@ def save_latency_summary(records: List[Dict[str, Any]], run_dir: Path) -> None:
 
 
 
+
+def save_depth_audit(records: List[Dict[str, Any]], run_dir: Path) -> None:
+    """Report whether each configuration actually returned the requested unique parent depth."""
+    grouped: Dict[tuple, List[Dict[str, Any]]] = {}
+    for record in records:
+        grouped.setdefault((record["dataset"], record["configuration"]), []).append(record)
+
+    rows = []
+    for (dataset, configuration), items in sorted(grouped.items()):
+        returned = [int(item["retrieved_count"]) for item in items]
+        shortfalls = [int(item["depth_shortfall"]) for item in items]
+        rows.append({
+            "dataset": dataset,
+            "configuration": configuration,
+            "queries": len(items),
+            "requested_depth": int(items[0]["requested_depth"]),
+            "mean_unique_documents_returned": float(np.mean(returned)),
+            "median_unique_documents_returned": float(np.median(returned)),
+            "p95_unique_documents_returned": float(np.percentile(returned, 95)),
+            "queries_at_full_depth": sum(value == 0 for value in shortfalls),
+            "queries_with_depth_shortfall": sum(value > 0 for value in shortfalls),
+            "total_missing_document_slots": sum(shortfalls),
+            "mean_candidate_chunks": float(np.mean([
+                item["candidate_chunk_count"] for item in items
+            ])),
+            "mean_unique_parents_before_reranking": float(np.mean([
+                item["unique_parent_count_before_reranking"] for item in items
+            ])),
+            "mean_unique_parents_after_reranking": float(np.mean([
+                item["unique_parent_count_after_reranking"] for item in items
+            ])),
+        })
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "depth_audit.json").write_text(
+        json.dumps({
+            "definition": "Unique original BEIR parent documents returned after ranking; shortfall is requested_depth minus returned_count, floored at zero.",
+            "results": rows,
+        }, indent=2),
+        encoding="utf-8",
+    )
+    if rows:
+        with open(run_dir / "depth_audit.csv", "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+
+
+
 def _git_commit(repo_root: Path) -> str:
     try:
         return subprocess.check_output(
@@ -655,6 +704,7 @@ def main() -> None:
     save_summary(all_summary, run_dir)
     save_paired_statistics(all_records, run_dir)
     save_latency_summary(all_records, run_dir)
+    save_depth_audit(all_records, run_dir)
     _write_run_metadata(cfg, results_dir, repo_root)
     print(f"RESULTS_DIR={run_dir}")
 
