@@ -122,3 +122,51 @@ LongMemEval LLM-judge evaluation, Longformer/long-context model comparison,
 advanced RAG framework comparisons, RAM profiling, production-scale
 concurrency, and end-to-end security controls remain unimplemented or
 unmeasured. Do not claim these results until completed.
+
+
+## Paper-revision work on the current branch
+
+- The fresh benchmark runner now uses the paper's configuration labels:
+  - B1: BM25 only.
+  - B2: Hybrid RRF + cross-encoder reranking.
+  - B3: Hybrid RRF without reranking.
+  - B4: Dense FAISS only.
+- The paired-statistics runner and rank-preserving analyzer now compare B2 against B1, B3, and B4.
+- Every new BEIR run records its exact B1-B4 mapping in `raw/run_metadata.json`. The analyzer refuses to process a run with no mapping manifest or a different mapping. This prevents old raw B2/B4 records from being silently relabelled.
+- Historical result directories are not rewritten. The November 13 run used the previous code mapping (B2 dense; B4 reranked hybrid); the paper's manually corrected labels must not be treated as the raw runner's original labels. Use a new timestamped run for any fresh paper statistics.
+- Added `evaluation/runners/run_resource_scalability.py` to measure index build time, embedding build time, BM25 build time, FAISS disk footprint, embedding bytes, estimated BM25 Python-object size, process RSS, and per-configuration retrieval latency over increasing SciFact/NFCorpus corpus fractions. It runs each scale in a separate subprocess. This is an experiment harness, not a completed result.
+
+### Commands for the outstanding execution
+
+From `backend/`, after confirming the dataset files and model downloads are available:
+
+```bash
+python -m evaluation.runners.run_retrieval
+```
+
+Use the printed new `RUN_DIR`, then:
+
+```bash
+python -m evaluation.analyze_results --run-dir "<new RUN_DIR>"
+python -m evaluation.report_depth_audit --run-dir "<new RUN_DIR>"
+```
+
+Run the new scalability experiment:
+
+```bash
+python -m evaluation.runners.run_resource_scalability \
+  --datasets scifact,nfcorpus \
+  --scales 0.10,0.25,0.50,1.00 \
+  --query-count 30 \
+  --output-dir evaluation/results/scalability
+```
+
+### Remaining evidence not yet produced
+
+- LongMemEval answer-generation experiment: runner exists, but a full benchmark execution and official LLM-judge scoring are still required. Exact match and token F1 are diagnostics only.
+- Longformer/LED and Self-RAG/CRAG/RAPTOR comparisons: no matched experimental results are currently present. Related-work discussion is not an experimental comparison.
+- Cross-platform memory: the checked-in example JSONL is a smoke fixture, not a publication dataset. Supply a consented, de-identified, independently labelled evaluation set before reporting results.
+- Security: the paper can describe required safeguards and limitations, but actual tenant-isolation, authorization, deletion, prompt-injection, and encryption tests must be run against the deployed authenticated storage/API. The current conversation store's session metadata alone does not prove user/tenant isolation.
+- Resource/scalability results: the new harness has not been executed. Its RSS measurements include the loaded model/runtime, and its BM25 object size is an estimate; report these definitions with any resulting table.
+
+No new benchmark values are asserted in this status file. Only completed runs with preserved raw per-query records, run metadata, and analysis outputs may be used as results.
