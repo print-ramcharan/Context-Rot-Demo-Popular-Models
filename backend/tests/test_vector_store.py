@@ -74,3 +74,40 @@ class TestVectorStore:
         
         assert store.get_statistics()['total_chunks'] == 0
         assert len(store.chunks) == 0
+
+    def test_rejects_embedding_dimension_mismatch(self, store):
+        with pytest.raises(ValueError, match="dimension"):
+            store.add(np.zeros((1, 12), dtype="float32"), ["chunk"])
+
+    def test_rejects_metadata_length_mismatch_even_when_empty(self, store):
+        with pytest.raises(ValueError, match="metadata"):
+            store.add(np.zeros((1, 384), dtype="float32"), ["chunk"], metadata=[])
+
+    def test_rejects_non_finite_embeddings(self, store):
+        vectors = np.zeros((1, 384), dtype="float32")
+        vectors[0, 0] = np.nan
+        with pytest.raises(ValueError, match="finite"):
+            store.add(vectors, ["chunk"])
+
+    def test_empty_search_and_invalid_k(self, store):
+        result = store.search(np.zeros(384, dtype="float32"), k=5)
+        assert result == {"chunks": [], "distances": [], "indices": [], "metadata": []}
+        with pytest.raises(ValueError, match="positive"):
+            store.search(np.zeros(384, dtype="float32"), k=0)
+
+    def test_document_identity_lookup(self, store):
+        vectors = np.ones((1, 384), dtype="float32")
+        store.add(vectors, ["chunk"], [{"document_id": "doc-a"}])
+        assert store.contains_document("doc-a")
+        assert not store.contains_document("doc-b")
+
+    def test_load_rejects_misaligned_metadata(self, store, tmp_path):
+        import pickle
+        save_dir = tmp_path / "broken_index"
+        store.add(np.ones((1, 384), dtype="float32"), ["chunk"], [{"id": 1}])
+        store.save(str(save_dir))
+        with open(save_dir / "metadata.pkl", "wb") as handle:
+            pickle.dump([], handle)
+        fresh = VectorStore(dimension=384)
+        with pytest.raises(ValueError, match="inconsistent"):
+            fresh.load(str(save_dir))
