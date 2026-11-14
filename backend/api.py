@@ -10,6 +10,8 @@ from src.chunking import TextChunker
 from src.document_identity import document_id_for, chunk_id_for
 from src.context_assembly import ContextAssembler
 from src.reranker import CrossEncoderReranker
+from src.document_extraction import extract_document
+from src.grounded_answer import answer_with_evidence, ABSTENTION
 from src.utils.metrics import (
     MetricsCollector,
     advanced_ranking_metrics,
@@ -182,7 +184,9 @@ gen = EmbeddingGenerator(
     device=embedding_cfg.get('device', 'cpu'),
     cache_path=embedding_cfg.get('cache_path', "cache/embeddings.sqlite"),
     cache_max_items=embedding_cfg.get('cache_max_items', 200000),
-    cache_enabled=embedding_cfg.get('cache_enabled', True)
+    cache_enabled=embedding_cfg.get('cache_enabled', True),
+    query_instruction=embedding_cfg.get("query_instruction", ""),
+    query_prompt_name=embedding_cfg.get("query_prompt_name")
 )
 
 store = VectorStore(
@@ -210,7 +214,8 @@ retriever = SemanticRetriever(
 if retrieval_cfg.get('rerank_enabled', False):
     try:
         reranker = CrossEncoderReranker(
-            model_name=retrieval_cfg.get('rerank_model', "cross-encoder/ms-marco-MiniLM-L-6-v2")
+            model_name=retrieval_cfg.get('rerank_model', "cross-encoder/ms-marco-MiniLM-L-6-v2"),
+            device=embedding_cfg.get("device")
         )
         retriever.set_reranker(reranker)
         logger.info("Reranker initialized and attached to retriever")
@@ -837,23 +842,29 @@ async def upload_file(
     file: UploadFile = File(...),
     clear_existing_data: bool = Query(False, alias="clear_existing")
 ):
+    temp_path = None
     try:
         if clear_existing_data:
             store.clear()
             retriever.invalidate_cache()
-            logger.info("Cleared previous store data")
-        
-        file_path = DATA_DIR / file.filename
-        with open(file_path, "wb") as buffer:
+
+        safe_filename = Path(file.filename or "upload").name
+        suffix = Path(safe_filename).suffix.lower()
+        if suffix not in {".pdf", ".docx", ".txt", ".md"}:
+            raise HTTPException(status_code=400, detail="Supported files: PDF, DOCX, TXT and Markdown")
+
+        temp_path = DATA_DIR / f".upload-{time.time_ns()}{suffix}"
+        with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        
+
         extract_start = time.perf_counter()
-        text_content = _extract_text_from_file(file_path, file.filename)
+        text_content = extract_document(temp_path)
         if not text_content.strip():
             raise ValueError("No text content extracted")
-        
+
         document_id = document_id_for(text_content)
         if store.contains_document(document_id):
+            temp_path.unlink(missing_ok=True)
             return UploadResponse(
                 status="success",
                 message="Document content is already indexed",
@@ -864,51 +875,63 @@ async def upload_file(
                 timings_ms={"total_ms": (time.perf_counter() - extract_start) * 1000}
             )
 
-        chunk_dicts = chunker.chunk_document(text_content)
-        chunk_texts = [chunk['text'] for chunk in chunk_dicts]
+        permanent_path = DATA_DIR / f"{document_id[:16]}_{safe_filename}"
+        temp_path.replace(permanent_path)
+        temp_path = None
 
-        embeddings = gen.embed_batch(chunk_texts, batch_size=32)
+        chunk_dicts = chunker.chunk_document(text_content)
+        if not chunk_dicts:
+            raise ValueError("Document extraction produced no indexable sections")
+
+        # Section headings are included in the retrieval representation, while
+        # the stored evidence remains the original extracted child passage.
+        embedding_texts = [
+            ("Section: " + " > ".join(chunk.get("section_path", [])) + "\n" + chunk["text"]).strip()
+            for chunk in chunk_dicts
+        ]
+        embeddings = gen.embed_batch(embedding_texts, batch_size=16)
 
         metadata_list = []
         for i, chunk in enumerate(chunk_dicts):
             metadata_list.append({
                 "document_id": document_id,
                 "chunk_id": chunk_id_for(document_id, i, chunk["text"]),
-                "source": file.filename,
+                "source": safe_filename,
                 "chunk_index": i,
+                "parent_id": chunk.get("parent_id"),
+                "section_path": chunk.get("section_path", []),
+                "section_index": chunk.get("section_index"),
                 "char_offset": chunk["offset"],
                 "char_length": chunk["length"],
                 "word_count": chunk["word_count"],
+                "embedding_model": gen.model_name,
             })
 
-        store.add(embeddings, chunk_texts, metadata=metadata_list)
-        # The corpus changed: invalidate both retrieval-result and BM25 caches
-        # before rebuilding the lexical index against the new chunk collection.
+        store.add(embeddings, [chunk["text"] for chunk in chunk_dicts], metadata=metadata_list)
         retriever.invalidate_cache()
         store.save(INDEX_PATH)
-        
-        # Pre-build lexical index for immediate query readiness
         retriever.build_lexical_index()
-        
-        # Warm up embedding model for headstart
-        gen.embed_text("headstart warmup")
-        
-        logger.info(f"Pre-built BM25 index and warmed up embedding model for {len(chunk_dicts)} chunks")
-        
+        gen.embed_query("warmup query")
+
         latency = (time.perf_counter() - extract_start) * 1000
-        
+        logger.info("Indexed %s chunks from %s", len(chunk_dicts), safe_filename)
         return UploadResponse(
             status="success",
-            message=f"File '{file.filename}' ingested successfully",
+            message=f"File '{safe_filename}' ingested successfully",
             chunks_created=len(chunk_dicts),
             embeddings_stored=len(embeddings),
             document_id=document_id,
             duplicate=False,
             timings_ms={"total_ms": latency}
         )
-    except Exception as e:
-        logger.error(f"Upload error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Upload error")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        if temp_path and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
 
 @app.post("/query/standard")
 async def handle_query_standard(request: QueryRequest):
@@ -944,63 +967,77 @@ async def handle_query_standard(request: QueryRequest):
 @app.post("/query/rag")
 async def handle_query_rag(request: QueryRequest):
     async def stream_rag():
+        total_start = time.perf_counter()
+        user_query = request.user_query.strip()
+        if not user_query:
+            yield json.dumps({"type": "text", "text": ABSTENTION}) + "\n"
+            yield json.dumps({"type": "final", "abstained": True, "reason": "empty_query"}) + "\n"
+            return
         try:
-            total_start = time.perf_counter()
-            user_query = request.user_query.strip()
-            
             retrieve_start = time.perf_counter()
             retrieved_chunks = retriever.retrieve(
-                user_query, 
-                k=retrieval_cfg.get('top_k', 10)
+                user_query,
+                k=retrieval_cfg.get("top_k", 12),
+                use_cache=False,
             )
             retrieve_time = (time.perf_counter() - retrieve_start) * 1000
-            
-            # Keep the retrieved evidence intact unless lossy compaction is explicitly enabled.
-            # The default config sets context.compact=false; previously this endpoint
-            # ignored that setting and always extracted a small subset of sentences.
             retrieved_chunks = retriever.deduplicate_chunks(
-                retrieved_chunks, overlap_threshold=0.7
+                retrieved_chunks, overlap_threshold=0.82
             )
-            if context_cfg.get("compact", False):
-                context_chunks = assembler.compress_context(
-                    user_query,
-                    retrieved_chunks,
-                    max_context_chars=context_cfg.get("max_context_chars", 6000),
-                    max_sentences=context_cfg.get("max_sentences", 8),
-                    max_chunks_after_compaction=context_cfg.get("max_chunks", 10),
-                )
-            else:
-                context_chunks = assembler.truncate_to_fit(
-                    retrieved_chunks,
-                    context_cfg.get("max_context_chars", 6000),
-                )
+            context_chunks = assembler.truncate_to_fit(
+                retrieved_chunks,
+                context_cfg.get("max_context_chars", 18000),
+            )
             context = "\n\n".join(
-                c.get("text", "") for c in context_chunks if c.get("text")
+                "[Source: " + str(item.get("metadata", {}).get("source", "Unknown"))
+                + " | Section: " + " > ".join(item.get("metadata", {}).get("section_path", []))
+                + "]\n" + item.get("text", "")
+                for item in context_chunks if item.get("text")
             )
-            
+
             yield json.dumps({
                 "type": "metadata",
                 "model": llm_rag.model,
                 "retrieval_ms": retrieve_time,
-                "chunks_count": len(retrieved_chunks),
-                "context": context
+                "chunks_count": len(context_chunks),
+                "context": context,
             }) + "\n"
 
-            prompt = format_rag_prompt(user_query, context)
-            async for chunk in llm_rag.stream_generate(prompt):
-                if "error" in chunk:
-                    yield json.dumps({"type": "error", "detail": chunk["error"]}) + "\n"
-                    break
-                
-                # Yield text if present (even in final chunks)
-                if chunk.get("text"):
-                    yield json.dumps({"type": "text", "text": chunk["text"]}) + "\n"
+            if not context_chunks:
+                result = {
+                    "answer": ABSTENTION,
+                    "abstained": True,
+                    "citations": [],
+                    "reason": "no_retrieved_evidence",
+                }
+            else:
+                result = answer_with_evidence(
+                    llm_rag,
+                    user_query,
+                    context_chunks,
+                    max_tokens=llm_cfg.get("max_tokens", 700),
+                )
 
-                if chunk.get("done"):
-                    latency = (time.perf_counter() - total_start) * 1000
-                    yield json.dumps({"type": "final", "tokens": chunk.get("tokens"), "latency_ms": latency}) + "\n"
-        except Exception as e:
-            yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
+            yield json.dumps({"type": "text", "text": result["answer"]}) + "\n"
+            latency = (time.perf_counter() - total_start) * 1000
+            yield json.dumps({
+                "type": "final",
+                "latency_ms": latency,
+                "abstained": result.get("abstained", True),
+                "reason": result.get("reason"),
+                "citations": result.get("citations", []),
+            }) + "\n"
+        except Exception as exc:
+            logger.exception("Grounded RAG query failed")
+            # A generation/verification failure must never turn into a guessed answer.
+            yield json.dumps({"type": "text", "text": ABSTENTION}) + "\n"
+            yield json.dumps({
+                "type": "final",
+                "abstained": True,
+                "reason": "pipeline_error",
+                "detail": str(exc),
+                "latency_ms": (time.perf_counter() - total_start) * 1000,
+            }) + "\n"
 
     return StreamingResponse(stream_rag(), media_type="application/x-ndjson")
 
@@ -1085,23 +1122,5 @@ def conv_stats():
 # ── Helper Functions ──────────────────────────────────────────────────────────
 
 def _extract_text_from_file(file_path: Path, filename: str) -> str:
-    try:
-        if filename.endswith('.txt') or filename.endswith('.md'):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        elif filename.endswith('.pdf'):
-            import PyPDF2
-            text = ""
-            with open(file_path, 'rb') as f:
-                pdf_reader = PyPDF2.PdfReader(f)
-                for page in pdf_reader.pages:
-                    text += page.extract_text()
-            return text
-        elif filename.endswith('.docx'):
-            from docx import Document
-            doc = Document(file_path)
-            return "\n".join([para.text for para in doc.paragraphs])
-        return ""
-    except Exception as e:
-        logger.error(f"Extraction error: {e}")
-        return ""
+    """Backward-compatible wrapper around the layout-aware extractor."""
+    return extract_document(file_path)
