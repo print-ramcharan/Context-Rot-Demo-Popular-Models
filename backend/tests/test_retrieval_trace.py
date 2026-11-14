@@ -24,8 +24,11 @@ class FakeVectorStore:
 
 
 class FakeEmbeddingGenerator:
-    def embed_text(self, query):
+    def embed_query(self, query):
         return [1.0, 0.0]
+
+    def embed_text(self, query):
+        return self.embed_query(query)
 
 
 class FakeReranker:
