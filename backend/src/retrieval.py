@@ -565,49 +565,47 @@ class SemanticRetriever:
                 
         return unique_results
     
-    def deduplicate_chunks(self, chunks: list[dict], overlap_threshold: float = 0.8) -> list[dict]:
-        """
-        Remove duplicate or highly overlapping chunks.
-        
-        Args:
-            chunks (list[dict]): Retrieved chunks
-            overlap_threshold: Jaccard similarity threshold for deduplication
-            
-        Returns:
-            list[dict]: Deduplicated chunks
+    def deduplicate_chunks(self, chunks: list[dict], overlap_threshold: float = 0.82) -> list[dict]:
+        """Remove exact duplicates and heavily overlapping sibling chunks.
+
+        Similar passages from different documents or different parent sections
+        are retained because they may be independent corroborating evidence.
         """
         if not chunks:
             return []
-            
-        import re
-        def get_words(text):
-            # Strip punctuation and normalize whitespace
-            text = re.sub(r'[^\w\s]', '', text.lower())
-            return set(text.split())
-            
-        unique_chunks = [chunks[0]]
-        for i in range(1, len(chunks)):
-            is_duplicate = False
-            words_i = get_words(chunks[i]['text'])
-            
-            for existing in unique_chunks:
-                words_existing = get_words(existing['text'])
-                intersection = words_i.intersection(words_existing)
-                union = words_i.union(words_existing)
-                
-                if len(union) == 0:
+
+        def words(text):
+            return set(re.findall(r"\\b\\w+\\b", (text or "").lower()))
+
+        unique = []
+        seen_exact = set()
+        for chunk in chunks:
+            text = chunk.get("text", "")
+            metadata = chunk.get("metadata", {})
+            exact_key = (
+                metadata.get("document_id"),
+                re.sub(r"\\s+", " ", text).strip().lower(),
+            )
+            if exact_key in seen_exact:
+                continue
+            current_words = words(text)
+            duplicate = False
+            for prior in unique:
+                prior_meta = prior.get("metadata", {})
+                same_document = metadata.get("document_id") == prior_meta.get("document_id")
+                same_parent = metadata.get("parent_id") == prior_meta.get("parent_id")
+                if not (same_document and same_parent):
                     continue
-                    
-                jaccard = len(intersection) / len(union)
-                if jaccard > overlap_threshold:
-                    is_duplicate = True
+                prior_words = words(prior.get("text", ""))
+                union = current_words | prior_words
+                if union and len(current_words & prior_words) / len(union) >= overlap_threshold:
+                    duplicate = True
                     break
-            
-            if not is_duplicate:
-                unique_chunks.append(chunks[i])
-                
-        return unique_chunks
-    
+            if not duplicate:
+                unique.append(chunk)
+                seen_exact.add(exact_key)
+        return unique
+
     def explain_retrieval(self, query: str, k: int = 5) -> dict:
         """
         Retrieve with detailed explanation of why chunks were selected.
