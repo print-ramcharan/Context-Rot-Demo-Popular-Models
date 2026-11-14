@@ -196,7 +196,7 @@ def run_dataset(
     metadata = [c["metadata"] for c in chunks]
     embedding_texts = [
         ("Section: " + " > ".join(item.get("metadata", {}).get("section_path", []))
-         + "\\n" + item["text"]).strip()
+         + " " + item["text"]).strip()
         for item in chunks
     ]
     dim = embedding_generator.get_embedding_dimension()
@@ -243,9 +243,22 @@ def run_dataset(
                 reranker,
             )
             config_ms = (time.perf_counter() - config_start) * 1000.0
-            latency_samples_ms = [config_ms]
+            latency_samples_ms = []
             if qid in sampled_ids:
-                for _ in range(latency_repeats - 1):
+                # One unrecorded warm-up avoids mixing first-use cache/model
+                # initialization with the repeated latency observations.
+                _run_config_with_depth(
+                    query_text,
+                    config,
+                    chunks,
+                    vector_store,
+                    embedding_generator,
+                    bm25_index,
+                    cfg,
+                    retrievers.get(config_id),
+                    reranker,
+                )
+                for _ in range(latency_repeats):
                     repeat_start = time.perf_counter()
                     _run_config_with_depth(
                         query_text,
@@ -625,7 +638,11 @@ def main() -> None:
         summary, dataset_records = run_dataset(
             dataset_name=dataset_name,
             data_path=data_path,
-            cfg=retrieval_cfg,
+            cfg={
+                **retrieval_cfg,
+                "latency": cfg.get("latency", {}),
+                "seed": cfg.get("seed", 42),
+            },
             embedding_generator=embedding_generator,
             chunk_size=chunk_cfg["chunk_size"],
             overlap=chunk_cfg["overlap"],
