@@ -22,8 +22,14 @@ class CrossEncoderReranker:
             self.model = None
 
     def rerank(self, query: str, candidates: list[dict], top_n: int = 6) -> list[dict]:
-        if not candidates or self.model is None:
-            return candidates
+        self.last_trace = {"scored_chunk_ids": [], "raw_scores": []}
+        if not candidates:
+            return []
+        if self.model is None:
+            raise RuntimeError(
+                f"Cross-encoder '{self.model_name}' is unavailable; "
+                "refusing to report an unreranked result as reranked."
+            )
 
         pairs = [
             [query, c.get("rerank_text") or c.get("text", "")]
@@ -40,13 +46,16 @@ class CrossEncoderReranker:
         }
 
         reranked = []
-        for original_rank, (candidate, score) in enumerate(zip(candidates, scores), start=1):
+        for candidate, score in zip(candidates, scores):
             updated = dict(candidate)
             updated["original_score"] = candidate.get("score")
             updated["rerank_score"] = float(score)
-            updated["original_rank"] = original_rank
+            updated["original_rank"] = candidate.get("rank")
             updated["score"] = float(score)
             reranked.append(updated)
 
         reranked.sort(key=lambda x: x["rerank_score"], reverse=True)
-        return reranked[:top_n]
+        selected = reranked[:top_n]
+        for final_rank, item in enumerate(selected, start=1):
+            item["rank"] = final_rank
+        return selected
