@@ -7,6 +7,7 @@ from src.retrieval import SemanticRetriever
 from src.vector_store import VectorStore
 from src.embedding import EmbeddingGenerator
 from src.chunking import TextChunker
+from src.document_identity import document_id_for, chunk_id_for
 from src.context_assembly import ContextAssembler
 from src.reranker import CrossEncoderReranker
 from src.utils.metrics import (
@@ -849,16 +850,33 @@ async def upload_file(
         if not text_content.strip():
             raise ValueError("No text content extracted")
         
+        document_id = document_id_for(text_content)
+        if store.contains_document(document_id):
+            return UploadResponse(
+                status="success",
+                message="Document content is already indexed",
+                chunks_created=0,
+                embeddings_stored=0,
+                timings_ms={"total_ms": (time.perf_counter() - extract_start) * 1000}
+            )
+
         chunk_dicts = chunker.chunk_document(text_content)
         chunk_texts = [chunk['text'] for chunk in chunk_dicts]
-        
+
         embeddings = gen.embed_batch(chunk_texts, batch_size=32)
-        
-        metadata_list = [
-            {"source": file.filename, "chunk_index": i}
-            for i in range(len(chunk_dicts))
-        ]
-        
+
+        metadata_list = []
+        for i, chunk in enumerate(chunk_dicts):
+            metadata_list.append({
+                "document_id": document_id,
+                "chunk_id": chunk_id_for(document_id, i, chunk["text"]),
+                "source": file.filename,
+                "chunk_index": i,
+                "char_offset": chunk["offset"],
+                "char_length": chunk["length"],
+                "word_count": chunk["word_count"],
+            })
+
         store.add(embeddings, chunk_texts, metadata=metadata_list)
         # The corpus changed: invalidate both retrieval-result and BM25 caches
         # before rebuilding the lexical index against the new chunk collection.
