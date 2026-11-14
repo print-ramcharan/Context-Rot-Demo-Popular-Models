@@ -169,7 +169,7 @@ class SemanticRetriever:
         dense_k = min(self.dense_k, self.vector_store.index.ntotal or 0)
         bm25_k = self.bm25_k
         query_embedding_start = time.perf_counter()
-        query_embedding = self.embedding_generator.embed_text(query)
+        query_embedding = self.embedding_generator.embed_query(query)
         embedding_ms = (time.perf_counter() - query_embedding_start) * 1000
 
         faiss_start = time.perf_counter()
@@ -374,7 +374,7 @@ class SemanticRetriever:
         return results
 
     def retrieve_semantic(self, query: str, k: int, threshold: float) -> list[dict]:
-        query_embedding = self.embedding_generator.embed_text(query)
+        query_embedding = self.embedding_generator.embed_query(query)
         results = self.vector_store.search(query_embedding, k=k)
         retrieved_items = []
         for i in range(len(results['chunks'])):
@@ -420,7 +420,7 @@ class SemanticRetriever:
         
         def run_dense_search():
             nonlocal query_emb
-            query_emb = self.embedding_generator.embed_text(query)
+            query_emb = self.embedding_generator.embed_query(query)
             index_total = self.vector_store.index.ntotal if self.vector_store.index else 0
             dense_k = min(self.dense_k, index_total or 0)
             dense_k = dense_k if dense_k > 0 else k
@@ -477,9 +477,11 @@ class SemanticRetriever:
         ranked = sorted(rrf_scores.items(), key=lambda item: (-item[1], item[0]))
 
         retrieved_items = []
-        # Apply the threshold before the final top-k cutoff. Slicing the fused
-        # ranking first can discard valid lower-ranked candidates and return
-        # fewer than k results even when enough qualifying candidates exist.
+        # Retrieve a wider candidate pool before reranking. The previous code
+        # stopped at k, making rerank_candidate_pool ineffective whenever k
+        # was smaller than the configured reranker pool.
+        candidate_limit = max(k, self.rerank_candidate_pool) if self.enable_rerank else k
+        # Apply threshold before the final cutoff.
         for idx, score in ranked:
             if idx < 0 or idx >= len(self.vector_store.chunks):
                 continue
@@ -502,7 +504,7 @@ class SemanticRetriever:
                 'dense_score': dense_score,
                 'bm25_score': bm25_scores_list[idx] if idx < len(bm25_scores_list) else 0.0
             })
-            if len(retrieved_items) >= k:
+            if len(retrieved_items) >= candidate_limit:
                 break
 
         return self._apply_rerank(query, retrieved_items)
@@ -518,7 +520,7 @@ class SemanticRetriever:
         pool = candidates[: self.rerank_candidate_pool]
         try:
             return self.reranker.rerank(
-                query, pool, top_n=self.rerank_top_n
+                query, pool, top_n=min(self.rerank_top_n, len(pool))
             )
         except Exception as exc:
             logger.exception("Reranking failed")
@@ -610,7 +612,7 @@ class SemanticRetriever:
         """
         Retrieve with detailed explanation of why chunks were selected.
         """
-        query_embedding = self.embedding_generator.embed_text(query)
+        query_embedding = self.embedding_generator.embed_query(query)
         results = self.retrieve(query, k=k)
         
         explanation = {
