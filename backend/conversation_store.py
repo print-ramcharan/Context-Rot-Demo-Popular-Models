@@ -65,6 +65,22 @@ class ConversationStore:
         self._sessions = self._read_json(self.sessions_file, dict)
         if len(self._chunks) != len(self._metadata):
             raise ValueError("Conversation chunks and metadata are inconsistent")
+        if any(not isinstance(chunk, str) for chunk in self._chunks):
+            raise ValueError("Conversation chunk records must be strings")
+        if any(
+            not isinstance(metadata, dict)
+            or not isinstance(metadata.get("user_id"), str)
+            or not isinstance(metadata.get("session_id"), str)
+            for metadata in self._metadata
+        ):
+            raise ValueError("Conversation metadata is missing valid ownership fields")
+        if any(
+            not isinstance(session, dict)
+            or not isinstance(session.get("user_id"), str)
+            or not isinstance(session.get("session_id"), str)
+            for session in self._sessions.values()
+        ):
+            raise ValueError("Conversation session registry has an invalid schema")
         if self.index_file.exists() and self.chunks_file.exists() and self.metadata_file.exists():
             self._index = faiss.read_index(str(self.index_file))
             if self._index.ntotal != len(self._chunks):
