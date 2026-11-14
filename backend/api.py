@@ -493,10 +493,12 @@ def evaluate(request: EvaluationRequest):
                 chunk_id for chunk_id in input_chunk_ids
                 if chunk_id not in retained_chunk_ids
             ],
-            "input_tokens": len(
+            # These are whitespace-delimited word counts, not model tokens.
+            "input_words": len(
                 " ".join(item.get("text", "") for item in retrieved).split()
             ),
-            "output_tokens": len(context.split()),
+            "output_words": len(context.split()),
+            "token_counts_measured": False,
             "latency_ms": compaction_ms,
         }
         retrieved_sources = {
@@ -761,8 +763,8 @@ def compare_pipeline_stages(request: ComparisonRequest):
                 item["context_recall"]
                 for item in values if item["context_recall"] is not None
             ]),
-            "tokens": summarize_metric([
-                item["tokens_after"] for item in values
+            "word_count": summarize_metric([
+                item["word_count_after"] for item in values
             ]),
             "retention": summarize_metric([
                 item["evidence_retention"]
@@ -856,6 +858,9 @@ async def upload_file(
         ]
         
         store.add(embeddings, chunk_texts, metadata=metadata_list)
+        # The corpus changed: invalidate both retrieval-result and BM25 caches
+        # before rebuilding the lexical index against the new chunk collection.
+        retriever.invalidate_cache()
         store.save(INDEX_PATH)
         
         # Pre-build lexical index for immediate query readiness
