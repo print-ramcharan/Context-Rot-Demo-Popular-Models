@@ -22,9 +22,9 @@ CONFIG_PATH = _CONFIG_PATH
 
 CONFIGS = {
     "B1": {"label": "BM25 only", "mode": "bm25", "rerank": False},
-    "B2": {"label": "Dense FAISS only", "mode": "dense", "rerank": False},
+    "B2": {"label": "Hybrid + Cross-Encoder Reranking", "mode": "hybrid", "rerank": True},
     "B3": {"label": "Hybrid RRF", "mode": "hybrid", "rerank": False},
-    "B4": {"label": "Hybrid + Reranker", "mode": "hybrid", "rerank": True},
+    "B4": {"label": "Dense FAISS only", "mode": "dense", "rerank": False},
 }
 
 
