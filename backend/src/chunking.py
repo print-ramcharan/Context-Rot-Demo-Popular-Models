@@ -119,25 +119,15 @@ class TextChunker:
             if not blocks:
                 continue
 
-            # Build a word stream with exact source spans, but only split at
-            # paragraph boundaries unless a single paragraph exceeds the target.
-            words = []
-            for block_text, block_start, _ in blocks:
-                for match in re.finditer(r"\S+", block_text):
-                    words.append((match.group(0), block_start + match.start(), block_start + match.end()))
-
-            if not words:
-                continue
-
             parent_material = "\n".join(block[0] for block in blocks)
             parent_id = hashlib.sha256(
                 ("/".join(section["section_path"]) + parent_material).encode("utf-8")
             ).hexdigest()[:20]
 
-            start = 0
-            while start < len(words):
-                end = min(start + self.chunk_size, len(words))
-                selected = words[start:end]
+            def emit(selected):
+                nonlocal chunk_index
+                if not selected:
+                    return
                 source_start = selected[0][1]
                 source_end = selected[-1][2]
                 source_text = text[source_start:source_end].strip()
@@ -153,9 +143,39 @@ class TextChunker:
                         "section_index": section_index,
                     })
                     chunk_index += 1
-                if end >= len(words):
-                    break
-                start += step
+
+            current = []
+            for block_text, block_start, _ in blocks:
+                block_words = [
+                    (match.group(0), block_start + match.start(), block_start + match.end())
+                    for match in re.finditer(r"\S+", block_text)
+                ]
+                if not block_words:
+                    continue
+
+                # Keep paragraphs intact when they fit. Split only exceptionally
+                # long paragraphs, using overlap to retain local continuity.
+                if len(block_words) > self.chunk_size:
+                    if current:
+                        emit(current)
+                        current = current[-self.overlap:] if self.overlap else []
+                    start = 0
+                    while start < len(block_words):
+                        end = min(start + self.chunk_size, len(block_words))
+                        emit(block_words[start:end])
+                        if end >= len(block_words):
+                            break
+                        start += step
+                    current = block_words[-self.overlap:] if self.overlap else []
+                    continue
+
+                if current and len(current) + len(block_words) > self.chunk_size:
+                    emit(current)
+                    current = current[-self.overlap:] if self.overlap else []
+                current.extend(block_words)
+
+            if current:
+                emit(current)
 
         return chunks
 
