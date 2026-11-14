@@ -78,7 +78,8 @@ class ConversationStore:
 
     @staticmethod
     def _session_key(user_id: str, session_id: str) -> str:
-        return user_id + ":" + session_id
+        # JSON tuple encoding avoids delimiter-collision between principals and IDs.
+        return json.dumps([user_id, session_id], separators=(",", ":"))
 
     @staticmethod
     def _normalize(vecs: np.ndarray) -> np.ndarray:
@@ -113,6 +114,10 @@ class ConversationStore:
         ]
         if not raw_chunks:
             return {"chunk_count": 0, "session_id": session_id}
+        key = self._session_key(user_id, session_id)
+        existing_session = self._sessions.get(key)
+        if existing_session and existing_session.get("platform") != platform:
+            raise ValueError("A session cannot change platform")
         embeddings = self._normalize(embedding_generator.embed_batch(raw_chunks))
         timestamp = datetime.now(timezone.utc).isoformat()
         start_idx = len(self._chunks)
@@ -127,7 +132,6 @@ class ConversationStore:
         self._index.add(embeddings)
         self._chunks.extend(raw_chunks)
         self._metadata.extend(new_metadata)
-        key = self._session_key(user_id, session_id)
         if key not in self._sessions:
             self._sessions[key] = {
                 "session_id": session_id,
@@ -138,8 +142,6 @@ class ConversationStore:
                 "chunk_count": 0,
             }
         session = self._sessions[key]
-        if session.get("platform") != platform:
-            raise ValueError("A session cannot change platform")
         session["message_count"] += 1
         session["chunk_count"] += len(raw_chunks)
         session["last_updated"] = timestamp
