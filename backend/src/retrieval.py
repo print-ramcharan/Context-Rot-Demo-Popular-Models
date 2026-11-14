@@ -230,6 +230,7 @@ class SemanticRetriever:
                 "score": float(score),
                 "metadata": metadata,
                 "rank": rank,
+                "vector_index": int(index),
                 "dense_score": dense_score,
                 "bm25_score": bm25_by_index.get(index, {}).get("score", 0.0),
             })
