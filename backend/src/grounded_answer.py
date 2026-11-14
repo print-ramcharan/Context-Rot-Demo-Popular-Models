@@ -46,7 +46,7 @@ def _evidence_payload(chunks: list[dict]) -> tuple[list[dict], dict[str, dict]]:
 
 
 def answer_with_evidence(llm, query: str, chunks: list[dict], max_tokens: int = 700) -> dict:
-    """Generate claim/evidence pairs, then independently verify support.
+    """Generate claim/evidence pairs, then run a separate verification pass for support.
 
     Any malformed output, missing citation, unsupported claim or verifier
     uncertainty fails closed to an explicit abstention.
@@ -100,7 +100,7 @@ SOURCE EVIDENCE:
         ids = claim.get("evidence_ids")
         if not text or not isinstance(ids, list) or not ids:
             return {"answer": ABSTENTION, "abstained": True, "citations": [], "reason": "claim_without_evidence"}
-        if any(evidence_id not in evidence_lookup for evidence_id in ids):
+        if any(not isinstance(evidence_id, str) or evidence_id not in evidence_lookup for evidence_id in ids):
             return {"answer": ABSTENTION, "abstained": True, "citations": [], "reason": "invalid_evidence_reference"}
         normalized_claims.append({"text": text, "evidence_ids": ids})
         used_ids.extend(ids)
@@ -110,7 +110,7 @@ You are a strict evidence auditor. Determine whether EVERY claim is directly
 entailed by its cited source passages. Do not use outside knowledge.
 A claim is unsupported if it adds a number, date, comparison, cause, entity,
 qualification or detail not established by the cited text.
-If evidence is ambiguous, incomplete or contradictory, mark supported=false.
+If evidence is ambiguous, incomplete or contradictory, mark supported=false. Also mark supported=false if the claims fail to answer any required part of the question.
 Return ONLY valid JSON:
 {{"supported": true, "unsupported_claims": [], "conflicts": []}}
 
@@ -126,7 +126,9 @@ SOURCE EVIDENCE:
 
     verification = llm.generate(verification_prompt, max_tokens=350, temperature=0.0)
     verdict = _parse_json_object(verification.get("response", ""))
-    if not verdict or verdict.get("supported") is not True:
+    if (not verdict or verdict.get("supported") is not True
+            or verdict.get("unsupported_claims") not in ([], None)
+            or verdict.get("conflicts") not in ([], None)):
         return {
             "answer": ABSTENTION,
             "abstained": True,
@@ -153,8 +155,16 @@ SOURCE EVIDENCE:
         }
         for ref in citations
     ]
+    source_lines = [
+        f'[{item["id"]}] {item["source"]}'
+        + (f' — {item["section"]}' if item["section"] else "")
+        for item in source_details
+    ]
+    answer = " ".join(answer_parts)
+    if source_lines:
+        answer += "\\n\\nSources: " + "; ".join(source_lines)
     return {
-        "answer": " ".join(answer_parts),
+        "answer": answer,
         "abstained": False,
         "citations": source_details,
         "reason": "verified",
