@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import os
-import uuid
+import logging
 import faiss
 import numpy as np
 from pathlib import Path
@@ -16,6 +16,7 @@ from typing import Optional
 from src.chunking import TextChunker
 
 EMBEDDING_DIM = 384
+logger = logging.getLogger(__name__)
 
 
 class ConversationStore:
@@ -31,7 +32,19 @@ class ConversationStore:
         self._chunks: list[str] = []
         self._metadata: list[dict] = []
         self._sessions: dict[str, dict] = {}
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.storage_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            os.chmod(self.storage_dir, 0o700)
+        except OSError:
+            logger.warning("Could not restrict permissions on conversation directory")
+        if not self.chunks_file.exists() and any(
+            (self.storage_dir / name).exists()
+            for name in ("chunks.pkl", "metadata.pkl")
+        ):
+            logger.warning(
+                "Legacy pickle conversation files were found and intentionally ignored. "
+                "Back them up and re-import trusted conversations through the API."
+            )
         self._load()
 
     def _init_index(self):
@@ -67,11 +80,19 @@ class ConversationStore:
         temporary = path.with_suffix(path.suffix + ".tmp")
         temporary.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
         os.replace(str(temporary), str(path))
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            logger.warning("Could not restrict permissions on %s", path.name)
 
     def _save(self):
         temporary_index = self.index_file.with_suffix(".faiss.tmp")
         faiss.write_index(self._index, str(temporary_index))
         os.replace(str(temporary_index), str(self.index_file))
+        try:
+            os.chmod(self.index_file, 0o600)
+        except OSError:
+            logger.warning("Could not restrict permissions on conversation FAISS index")
         self._atomic_json(self.chunks_file, self._chunks)
         self._atomic_json(self.metadata_file, self._metadata)
         self._atomic_json(self.sessions_file, self._sessions)
