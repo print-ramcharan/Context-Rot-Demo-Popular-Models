@@ -5,6 +5,7 @@ import math
 import re
 import time
 from collections import OrderedDict
+from typing import Optional
 import logging
 import hashlib
 
@@ -258,7 +259,7 @@ class SemanticRetriever:
         rerank_ms = (time.perf_counter() - rerank_start) * 1000
         final_items = final_items[:max_k]
 
-        def trace_item(item: dict, final_rank: int | None = None) -> dict:
+        def trace_item(item: dict, final_rank: Optional[int] = None) -> dict:
             metadata = item.get("metadata", {})
             fallback_index = item.get("vector_index")
             if fallback_index is None:
