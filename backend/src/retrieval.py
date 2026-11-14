@@ -575,7 +575,7 @@ class SemanticRetriever:
             return []
 
         def words(text):
-            return set(re.findall(r"\\b\\w+\\b", (text or "").lower()))
+            return set(re.findall(r"\b\w+\b", (text or "").lower()))
 
         unique = []
         seen_exact = set()
@@ -584,7 +584,7 @@ class SemanticRetriever:
             metadata = chunk.get("metadata", {})
             exact_key = (
                 metadata.get("document_id"),
-                re.sub(r"\\s+", " ", text).strip().lower(),
+                re.sub(r"\s+", " ", text).strip().lower(),
             )
             if exact_key in seen_exact:
                 continue
