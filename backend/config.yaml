@@ -1,35 +1,40 @@
 chunking:
-  # Larger chunks keep scenes/paragraphs together so answers don't split across boundaries.
-  chunk_size: 400
-  overlap: 80
+  # Word-count approximation; boundaries preserve headings and paragraphs.
+  chunk_size: 350
+  overlap: 50
 
 embedding:
-  model_name: "all-MiniLM-L6-v2"
-  device: "cpu"
+  # BGE-base is a practical CPU/MPS model for an 8 GB Mac.
+  # Qwen/Qwen3-Embedding-0.6B can be selected after checking local memory.
+  model_name: "BAAI/bge-base-en-v1.5"
+  device: null
+  query_instruction: "Represent this sentence for searching relevant passages: "
   cache_path: "cache/embeddings.sqlite"
   cache_max_items: 200000
   cache_enabled: true
 
 retrieval:
   mode: "hybrid"
-  top_k: 20
-  similarity_threshold: 0.05
-  dense_k: 50
-  bm25_k: 50
-  alpha: 0.5  # Balanced hybrid retrieval
+  top_k: 12
+  similarity_threshold: 0.0
+  dense_k: 100
+  bm25_k: 100
+  rrf_k: 60
   rerank_enabled: true
+  # Lightweight default; Qwen/Qwen3-Reranker-0.6B is configurable.
   rerank_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
-  rerank_top_n: 8
-  rerank_candidate_pool: 20
-  query_cache_ttl_s: 300
+  rerank_top_n: 12
+  rerank_candidate_pool: 50
+  query_cache_ttl_s: 180
   query_cache_max_items: 10000
 
 context:
   compact: false
-  max_context_chars: 12000
-  max_generation_chars: 3000
+  max_context_chars: 18000
+  max_generation_chars: 5000
   max_sentences: 8
-  max_chunks: 10
+  max_chunks: 12
+  require_verification: true
 
 storage:
   index_path: "memory_index"
@@ -37,43 +42,14 @@ storage:
   auto_load: true
 
 llm:
-  provider: "openrouter"  # Options: "ollama", "huggingface", "anthropic", "openai", "openrouter", "gemini"
-  
-  # For Ollama (local, no API key needed)
-  ollama:
-    model: "llama2"  # or "mistral", "phi", "gemma"
-    base_url: "http://localhost:11434"
-  
-  # For HuggingFace (local, no API key needed)
-  huggingface:
-    model: "mistralai/Mistral-7B-Instruct-v0.2"
-    device: "cpu"  # or "cuda" if GPU available
-    load_in_8bit: false
-  
-  # For API-based models (requires API key)
-  anthropic:
-    model: "claude-sonnet-4-20250514"
-    api_key: ""  # Set via environment variable
-  
-  openai:
-    model: "gpt-4"
-    api_key: ""  # Set via environment variable
-
+  provider: "openrouter"
   openrouter:
     model: "openai/gpt-4o-mini"
     base_url: "https://openrouter.ai/api/v1"
     http_referer: "http://localhost:5173"
     app_name: "Context Rot Lab"
-  
-  # For Gemini (requires API key)
-  gemini:
-    model: "gemini-3.5-flash-lite"
-    api_key: ""  # Read from GEMINI_API_KEY in .env
-  
-  # Common parameters
-  max_tokens: 256
-  temperature: 0.7
-
+  max_tokens: 700
+  temperature: 0.0
   semantic_cache:
     enabled: false
     embedding_model: "all-MiniLM-L6-v2"

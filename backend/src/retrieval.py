@@ -114,6 +114,7 @@ class SemanticRetriever:
                  dense_k: int = 30,
                  bm25_k: int = 30,
                  alpha: float = 0.65,
+                 rrf_k: int = 60,
                  enable_rerank: bool = False,
                  rerank_top_n: int = 6,
                  rerank_candidate_pool: int = 30,
@@ -136,6 +137,7 @@ class SemanticRetriever:
         self.dense_k = dense_k
         self.bm25_k = bm25_k
         self.alpha = alpha
+        self.rrf_k = max(1, int(rrf_k))
         self.enable_rerank = enable_rerank
         self.rerank_top_n = rerank_top_n
         self.rerank_candidate_pool = rerank_candidate_pool
@@ -169,7 +171,7 @@ class SemanticRetriever:
         dense_k = min(self.dense_k, self.vector_store.index.ntotal or 0)
         bm25_k = self.bm25_k
         query_embedding_start = time.perf_counter()
-        query_embedding = self.embedding_generator.embed_text(query)
+        query_embedding = self.embedding_generator.embed_query(query)
         embedding_ms = (time.perf_counter() - query_embedding_start) * 1000
 
         faiss_start = time.perf_counter()
@@ -211,9 +213,9 @@ class SemanticRetriever:
         for index in set(dense_by_index) | set(bm25_by_index):
             score = 0.0
             if index in dense_by_index:
-                score += 1.0 / (60 + dense_by_index[index]["rank"])
+                score += 1.0 / (self.rrf_k + dense_by_index[index]["rank"])
             if index in bm25_by_index:
-                score += 1.0 / (60 + bm25_by_index[index]["rank"])
+                score += 1.0 / (self.rrf_k + bm25_by_index[index]["rank"])
             rrf_scores[index] = score
         # Stable index tie-break makes equal-score RRF rankings reproducible.
         rrf_entries = sorted(
@@ -285,7 +287,7 @@ class SemanticRetriever:
             "configuration": {
                 "dense_k": self.dense_k,
                 "bm25_k": self.bm25_k,
-                "rrf_k": 60,
+                "rrf_k": self.rrf_k,
                 "rrf_pool": len(rrf_entries),
                 "reranker_limit": self.rerank_candidate_pool,
                 "evaluation_k": list(evaluation_k),
@@ -374,7 +376,7 @@ class SemanticRetriever:
         return results
 
     def retrieve_semantic(self, query: str, k: int, threshold: float) -> list[dict]:
-        query_embedding = self.embedding_generator.embed_text(query)
+        query_embedding = self.embedding_generator.embed_query(query)
         results = self.vector_store.search(query_embedding, k=k)
         retrieved_items = []
         for i in range(len(results['chunks'])):
@@ -420,7 +422,7 @@ class SemanticRetriever:
         
         def run_dense_search():
             nonlocal query_emb
-            query_emb = self.embedding_generator.embed_text(query)
+            query_emb = self.embedding_generator.embed_query(query)
             index_total = self.vector_store.index.ntotal if self.vector_store.index else 0
             dense_k = min(self.dense_k, index_total or 0)
             dense_k = dense_k if dense_k > 0 else k
@@ -462,24 +464,26 @@ class SemanticRetriever:
         # --- Reciprocal Rank Fusion ---
         # RRF_K is the standard constant (typically 60) that prevents
         # top-ranked documents from dominating the fusion score.
-        RRF_K = 60
+        RRF_K = self.rrf_k
         all_candidate_ids = set(dense_rank_map.keys()) | set(bm25_rank_map.keys())
 
         rrf_scores = {}
         for idx in all_candidate_ids:
             rrf_scores[idx] = 0.0
             if idx in dense_rank_map:
-                rrf_scores[idx] += 1.0 / (RRF_K + dense_rank_map[idx])
+                rrf_scores[idx] += 1.0 / (self.rrf_k + dense_rank_map[idx])
             if idx in bm25_rank_map:
-                rrf_scores[idx] += 1.0 / (RRF_K + bm25_rank_map[idx])
+                rrf_scores[idx] += 1.0 / (self.rrf_k + bm25_rank_map[idx])
 
         # Stable index tie-break makes equal-score RRF rankings reproducible.
         ranked = sorted(rrf_scores.items(), key=lambda item: (-item[1], item[0]))
 
         retrieved_items = []
-        # Apply the threshold before the final top-k cutoff. Slicing the fused
-        # ranking first can discard valid lower-ranked candidates and return
-        # fewer than k results even when enough qualifying candidates exist.
+        # Retrieve a wider candidate pool before reranking. The previous code
+        # stopped at k, making rerank_candidate_pool ineffective whenever k
+        # was smaller than the configured reranker pool.
+        candidate_limit = max(k, self.rerank_candidate_pool) if self.enable_rerank else k
+        # Apply threshold before the final cutoff.
         for idx, score in ranked:
             if idx < 0 or idx >= len(self.vector_store.chunks):
                 continue
@@ -502,7 +506,7 @@ class SemanticRetriever:
                 'dense_score': dense_score,
                 'bm25_score': bm25_scores_list[idx] if idx < len(bm25_scores_list) else 0.0
             })
-            if len(retrieved_items) >= k:
+            if len(retrieved_items) >= candidate_limit:
                 break
 
         return self._apply_rerank(query, retrieved_items)
@@ -518,7 +522,7 @@ class SemanticRetriever:
         pool = candidates[: self.rerank_candidate_pool]
         try:
             return self.reranker.rerank(
-                query, pool, top_n=self.rerank_top_n
+                query, pool, top_n=min(self.rerank_top_n, len(pool))
             )
         except Exception as exc:
             logger.exception("Reranking failed")
@@ -563,54 +567,118 @@ class SemanticRetriever:
                 
         return unique_results
     
-    def deduplicate_chunks(self, chunks: list[dict], overlap_threshold: float = 0.8) -> list[dict]:
+    def expand_parent_context(
+        self,
+        chunks: list[dict],
+        max_neighbors: int = 1,
+        max_total: int = 20,
+    ) -> list[dict]:
+        """Add adjacent child passages from the same parent section.
+
+        Retrieval still ranks child chunks. This step restores nearby source
+        context without mixing sections or documents.
         """
-        Remove duplicate or highly overlapping chunks.
-        
-        Args:
-            chunks (list[dict]): Retrieved chunks
-            overlap_threshold: Jaccard similarity threshold for deduplication
-            
-        Returns:
-            list[dict]: Deduplicated chunks
+        if not chunks or max_neighbors <= 0:
+            return chunks
+
+        positions = {}
+        for index, metadata in enumerate(self.vector_store.metadata):
+            document_id = metadata.get("document_id")
+            chunk_index = metadata.get("chunk_index")
+            if document_id is not None and chunk_index is not None:
+                positions[(document_id, chunk_index)] = index
+
+        expanded = list(chunks)
+        seen = {
+            (item.get("metadata", {}).get("document_id"),
+             item.get("metadata", {}).get("chunk_index"))
+            for item in chunks
+        }
+
+        for item in chunks:
+            metadata = item.get("metadata", {})
+            document_id = metadata.get("document_id")
+            parent_id = metadata.get("parent_id")
+            chunk_index = metadata.get("chunk_index")
+            if document_id is None or parent_id is None or chunk_index is None:
+                continue
+
+            for distance in range(1, max_neighbors + 1):
+                for neighbor_index in (chunk_index - distance, chunk_index + distance):
+                    key = (document_id, neighbor_index)
+                    vector_index = positions.get(key)
+                    if vector_index is None or key in seen:
+                        continue
+                    neighbor_metadata = self.vector_store.metadata[vector_index]
+                    if neighbor_metadata.get("parent_id") != parent_id:
+                        continue
+                    expanded.append({
+                        "text": self.vector_store.chunks[vector_index],
+                        "score": float(item.get("score", 0.0)) * (0.98 ** distance),
+                        "metadata": neighbor_metadata,
+                        "rank": len(expanded) + 1,
+                        "expanded_from": metadata.get("chunk_id"),
+                    })
+                    seen.add(key)
+                    if len(expanded) >= max_total:
+                        return sorted(
+                            expanded,
+                            key=lambda value: value.get("score", 0.0),
+                            reverse=True,
+                        )[:max_total]
+
+        return sorted(
+            expanded,
+            key=lambda value: value.get("score", 0.0),
+            reverse=True,
+        )[:max_total]
+
+    def deduplicate_chunks(self, chunks: list[dict], overlap_threshold: float = 0.82) -> list[dict]:
+        """Remove exact duplicates and heavily overlapping sibling chunks.
+
+        Similar passages from different documents or different parent sections
+        are retained because they may be independent corroborating evidence.
         """
         if not chunks:
             return []
-            
-        import re
-        def get_words(text):
-            # Strip punctuation and normalize whitespace
-            text = re.sub(r'[^\w\s]', '', text.lower())
-            return set(text.split())
-            
-        unique_chunks = [chunks[0]]
-        for i in range(1, len(chunks)):
-            is_duplicate = False
-            words_i = get_words(chunks[i]['text'])
-            
-            for existing in unique_chunks:
-                words_existing = get_words(existing['text'])
-                intersection = words_i.intersection(words_existing)
-                union = words_i.union(words_existing)
-                
-                if len(union) == 0:
+
+        def words(text):
+            return set(re.findall(r"\b\w+\b", (text or "").lower()))
+
+        unique = []
+        seen_exact = set()
+        for chunk in chunks:
+            text = chunk.get("text", "")
+            metadata = chunk.get("metadata", {})
+            exact_key = (
+                metadata.get("document_id"),
+                re.sub(r"\s+", " ", text).strip().lower(),
+            )
+            if exact_key in seen_exact:
+                continue
+            current_words = words(text)
+            duplicate = False
+            for prior in unique:
+                prior_meta = prior.get("metadata", {})
+                same_document = metadata.get("document_id") == prior_meta.get("document_id")
+                same_parent = metadata.get("parent_id") == prior_meta.get("parent_id")
+                if not (same_document and same_parent):
                     continue
-                    
-                jaccard = len(intersection) / len(union)
-                if jaccard > overlap_threshold:
-                    is_duplicate = True
+                prior_words = words(prior.get("text", ""))
+                union = current_words | prior_words
+                if union and len(current_words & prior_words) / len(union) >= overlap_threshold:
+                    duplicate = True
                     break
-            
-            if not is_duplicate:
-                unique_chunks.append(chunks[i])
-                
-        return unique_chunks
-    
+            if not duplicate:
+                unique.append(chunk)
+                seen_exact.add(exact_key)
+        return unique
+
     def explain_retrieval(self, query: str, k: int = 5) -> dict:
         """
         Retrieve with detailed explanation of why chunks were selected.
         """
-        query_embedding = self.embedding_generator.embed_text(query)
+        query_embedding = self.embedding_generator.embed_query(query)
         results = self.retrieve(query, k=k)
         
         explanation = {
