@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from src.inference import LLMInference 
 from src.retrieval import SemanticRetriever 
 from src.vector_store import VectorStore
@@ -84,8 +84,8 @@ async def authenticate_private_routes(request: Request, call_next):
 
 # Request models
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=1, max_length=1024)
 
 class QueryRequest(BaseModel):
     user_query: str
@@ -100,16 +100,16 @@ class UploadResponse(BaseModel):
     timings_ms: Optional[dict] = None
 
 class StoreConversationRequest(BaseModel):
-    platform: str
-    session_id: str
-    prompt: str
-    response: str
+    platform: str = Field(min_length=1, max_length=64)
+    session_id: str = Field(min_length=1, max_length=200)
+    prompt: str = Field(max_length=100000)
+    response: str = Field(max_length=100000)
 
 class RetrieveContextRequest(BaseModel):
-    query: str
-    top_k: int = 5
-    platform_filter: Optional[str] = None
-    similarity_threshold: float = 0.0
+    query: str = Field(min_length=1, max_length=10000)
+    top_k: int = Field(default=5, ge=1, le=50)
+    platform_filter: Optional[str] = Field(default=None, max_length=64)
+    similarity_threshold: float = Field(default=0.0, ge=0.0, le=1.0)
 
 class EvaluationCase(BaseModel):
     query: str
