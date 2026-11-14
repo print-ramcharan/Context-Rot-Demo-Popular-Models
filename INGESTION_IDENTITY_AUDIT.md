@@ -19,6 +19,7 @@ Branch: `research/ieee-evaluation`
 
 - Existing index entries created before this change may not have `document_id` metadata. They cannot be reliably deduplicated against new content by this mechanism. Re-ingest into a clean index or migrate old metadata before claiming corpus-wide duplicate elimination.
 - Document identity is based on exact extracted text bytes after UTF-8 encoding. Whitespace or extraction differences produce different document IDs, even if the rendered document appears equivalent.
+- Duplicate detection is a check-then-insert operation and is not atomic across concurrent uploads or multiple application workers. A shared transactional registry/lock is required for race-free deduplication.
 - Chunk IDs are deterministic for a given document content, chunking configuration, chunk position, and chunk text. Changing chunk size or overlap can change chunk IDs.
 - Original character offsets refer to the extracted text string supplied to the chunker, not byte offsets in the original PDF/DOCX file. PDF extraction does not preserve page-level source coordinates.
 - Save files are still written as separate files. Count validation detects inconsistent snapshots at load/save boundaries but does not provide a transactional multi-file commit or crash-safe atomic snapshot.
