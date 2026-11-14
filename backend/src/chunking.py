@@ -35,7 +35,7 @@ class TextChunker:
         """
         # Preserve offsets into the original, unnormalized source text.
         spans = [(match.group(0), match.start(), match.end())
-                 for match in re.finditer(r"\\S+", text or "")]
+                 for match in re.finditer(r"\S+", text or "")]
         if not spans:
             return []
 
@@ -57,7 +57,7 @@ class TextChunker:
             })
             chunk_index += 1
 
-            if end >= len(words):
+            if end >= len(spans):
                 break
             start += (self.chunk_size - self.overlap)
 
@@ -86,7 +86,7 @@ class TextChunker:
             chunk_words = words[start:end]
             chunks.append(" ".join(chunk_words))
 
-            if end >= len(words):
+            if end >= len(spans):
                 break
 
             start += (self.chunk_size - self.overlap)
