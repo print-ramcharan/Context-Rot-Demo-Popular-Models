@@ -14,7 +14,7 @@ This audit covers the live API evaluation trace from query embedding through den
 2. **Reranker failure handling**
    - Clear stale trace data before each rerank.
    - Raise an explicit error when the cross-encoder is unavailable.
-   - The traced evaluation path now fails closed when reranking is configured but the model is absent; it cannot silently label unchanged candidates as reranked.
+   - Both traced evaluation and ordinary retrieval now fail closed when reranking is configured but the model is absent or scoring fails; neither path silently labels unchanged candidates as reranked.
    - Trace reports whether reranking was enabled and actually applied.
 
 3. **Passage identity**
