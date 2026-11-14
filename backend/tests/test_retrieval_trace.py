@@ -78,3 +78,18 @@ def test_trace_uses_final_reranked_order_and_preserves_chunk_identity():
         "paper.txt:3", "paper.txt:8"
     ]
     assert rerank_trace["applied"] is True
+
+
+def test_regular_retrieval_does_not_silently_skip_enabled_reranker():
+    import pytest
+
+    retriever = SemanticRetriever(
+        FakeVectorStore(),
+        FakeEmbeddingGenerator(),
+        enable_rerank=True,
+    )
+    with pytest.raises(RuntimeError, match="cross-encoder is unavailable"):
+        retriever._apply_rerank(
+            "needle",
+            [{"text": "candidate", "metadata": {"source": "paper.txt"}}],
+        )
