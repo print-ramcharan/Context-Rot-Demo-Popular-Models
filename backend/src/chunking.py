@@ -3,7 +3,7 @@ import hashlib
 
 
 _HEADING_RE = re.compile(
-    r"^\s*(?:#{1,6}\s+.+|\d+(?:\.\d+)*[.)]?\s+.{2,100}|[A-Z][A-Z0-9 ,:/()&-]{3,80})\s*$"
+    r"^\s*(?:#{1,6}\s+.+|\d+(?:\.\d+)+[.)]?\s+.{2,100}|\d+[.)]\s+.{2,100}|[A-Z][A-Z0-9 ,:/()&-]{3,80})\s*$"
 )
 
 
@@ -171,7 +171,12 @@ class TextChunker:
 
                 if current and len(current) + len(block_words) > self.chunk_size:
                     emit(current)
-                    current = current[-self.overlap:] if self.overlap else []
+                    overlap_words = current[-self.overlap:] if self.overlap else []
+                    current = (
+                        overlap_words
+                        if len(overlap_words) + len(block_words) <= self.chunk_size
+                        else []
+                    )
                 current.extend(block_words)
 
             if current:
