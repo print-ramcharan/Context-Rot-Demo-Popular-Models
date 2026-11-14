@@ -6,9 +6,9 @@ comparison table (tables) under ``backend/evaluation/results``.
 Configurations
 --------------
 B1 : BM25 only (sparse)
-B2 : Dense FAISS only
+B2 : Hybrid + cross-encoder reranking
 B3 : BM25 + dense + RRF
-B4 : B3 + cross-encoder reranking
+B4 : Dense FAISS only
 """
 
 from __future__ import annotations
@@ -390,7 +390,7 @@ def _run_config_with_depth(
     if config["rerank"]:
         if reranker is None or getattr(reranker, "model", None) is None:
             raise RuntimeError(
-                "B4 requires a loaded cross-encoder; refusing to label an unreranked run as B4."
+                "B2 requires a loaded cross-encoder; refusing to label an unreranked run as B2."
             )
         # Rerank chunk candidates BEFORE parent aggregation. This lets the
         # cross-encoder choose the most relevant passage when a document has
@@ -476,7 +476,7 @@ def save_summary(summary: Dict[str, Any], results_dir: Path) -> None:
 
 
 def save_paired_statistics(records: List[Dict[str, Any]], run_dir: Path) -> None:
-    """Compare B4 against B1-B3 with paired per-query bootstrap CIs and Wilcoxon tests."""
+    """Compare the paper B2 reranker against B1, B3, and B4 with paired tests."""
     by_dataset: Dict[str, Dict[str, Dict[str, Dict[str, float]]]] = {}
     for record in records:
         by_dataset.setdefault(record["dataset"], {}).setdefault(
@@ -486,10 +486,10 @@ def save_paired_statistics(records: List[Dict[str, Any]], run_dir: Path) -> None
     metrics = ("recall@10", "ndcg@10", "mrr@10", "precision@10")
     rows = []
     for dataset, configurations in sorted(by_dataset.items()):
-        proposed = configurations.get("B4", {})
+        proposed = configurations.get("B2", {})
         for metric in metrics:
             metric_rows = []
-            for baseline_id in ("B1", "B2", "B3"):
+            for baseline_id in ("B1", "B3", "B4"):
                 baseline = configurations.get(baseline_id, {})
                 paired_ids = sorted(set(proposed) & set(baseline))
                 before = [float(baseline[qid][metric]) for qid in paired_ids]
@@ -504,7 +504,7 @@ def save_paired_statistics(records: List[Dict[str, Any]], run_dir: Path) -> None
                 test = wilcoxon_signed_rank_test(before, after)
                 metric_rows.append({
                     "dataset": dataset,
-                    "comparison": f"B4-{baseline_id}",
+                    "comparison": f"B2-{baseline_id}",
                     "metric": metric,
                     "n_queries": len(paired_ids),
                     "mean_paired_improvement": float(np.mean(differences)) if differences else None,
@@ -524,7 +524,7 @@ def save_paired_statistics(records: List[Dict[str, Any]], run_dir: Path) -> None
         json.dumps({
             "method": "paired bootstrap percentile 95% CI and two-sided Wilcoxon signed-rank",
             "multiple_testing": "Holm-Bonferroni across B4-vs-B1/B2/B3 comparisons within each dataset and metric",
-            "positive_improvement": "B4 metric minus baseline metric",
+            "positive_improvement": "B2 metric minus baseline metric",
             "results": rows,
         }, indent=2),
         encoding="utf-8",
