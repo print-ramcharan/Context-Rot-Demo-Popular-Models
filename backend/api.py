@@ -955,17 +955,28 @@ async def handle_query_rag(request: QueryRequest):
             )
             retrieve_time = (time.perf_counter() - retrieve_start) * 1000
             
-            # Deduplicate chunks to prevent redundant context
-            retrieved_chunks = retriever.deduplicate_chunks(retrieved_chunks, overlap_threshold=0.7)
-
-            compact_chunks = assembler.compress_context(
-                user_query, 
-                retrieved_chunks,
-                max_context_chars=context_cfg.get('max_context_chars', 6000),
-                max_sentences=context_cfg.get('max_sentences', 8),
-                max_chunks_after_compaction=context_cfg.get('max_chunks', 10)
+            # Keep the retrieved evidence intact unless lossy compaction is explicitly enabled.
+            # The default config sets context.compact=false; previously this endpoint
+            # ignored that setting and always extracted a small subset of sentences.
+            retrieved_chunks = retriever.deduplicate_chunks(
+                retrieved_chunks, overlap_threshold=0.7
             )
-            context = "\n\n".join([c.get('text', '') for c in compact_chunks])
+            if context_cfg.get("compact", False):
+                context_chunks = assembler.compress_context(
+                    user_query,
+                    retrieved_chunks,
+                    max_context_chars=context_cfg.get("max_context_chars", 6000),
+                    max_sentences=context_cfg.get("max_sentences", 8),
+                    max_chunks_after_compaction=context_cfg.get("max_chunks", 10),
+                )
+            else:
+                context_chunks = assembler.truncate_to_fit(
+                    retrieved_chunks,
+                    context_cfg.get("max_context_chars", 6000),
+                )
+            context = "\n\n".join(
+                c.get("text", "") for c in context_chunks if c.get("text")
+            )
             
             yield json.dumps({
                 "type": "metadata",
