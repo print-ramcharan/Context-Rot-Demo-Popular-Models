@@ -30,10 +30,12 @@ from pathlib import Path
 from typing import Optional, List, Any
 from conversation_store import ConversationStore
 from dotenv import load_dotenv
-from auth import authenticate, create_access_token, verify_access_token, TOKEN_TTL_SECONDS
 
 # Load environment variables
 load_dotenv() # Trigger reload
+
+# Import auth only after dotenv so deployment secrets are loaded first.
+from auth import authenticate, create_access_token, verify_access_token, TOKEN_TTL_SECONDS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
