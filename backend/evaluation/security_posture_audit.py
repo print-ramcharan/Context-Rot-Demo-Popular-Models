@@ -34,7 +34,7 @@ def inspect_sources(root: Path) -> dict[str, Any]:
             "recommended_action": remediation,
         })
 
-    if re.search(r"allow_origins\\s*=\\s*\\[[^]]*['\\\"]\\*['\\\"]", api):
+    if re.search(r"allow_origins\s*=\s*\[[^]]*['\"]\*['\"]", api):
         add(
             "CORS_WILDCARD", "high", "api.py",
             "CORS accepts every origin.",
