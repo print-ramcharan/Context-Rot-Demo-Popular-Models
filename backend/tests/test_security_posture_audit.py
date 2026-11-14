@@ -40,3 +40,10 @@ def test_audit_does_not_flag_controls_that_are_present(tmp_path: Path):
 
     report = inspect_sources(tmp_path)
     assert report["findings"] == []
+
+
+def test_current_backend_source_passes_static_security_audit():
+    backend_root = Path(__file__).resolve().parents[1]
+    report = inspect_sources(backend_root)
+    assert report["findings"] == []
+    assert report["status"] == "passed_static_checks"
