@@ -890,11 +890,6 @@ async def upload_file(
 ):
     temp_path = None
     try:
-        if clear_existing_data:
-            store.clear()
-            retriever.invalidate_cache()
-            store.save(INDEX_PATH)
-
         safe_filename = Path((file.filename or "upload").replace("\\", "/")).name
         suffix = Path(safe_filename).suffix.lower()
         if suffix not in {".pdf", ".docx", ".txt", ".md"}:
@@ -919,7 +914,7 @@ async def upload_file(
             raise ValueError("No text content extracted")
 
         document_id = document_id_for(text_content)
-        if store.contains_document(document_id):
+        if not clear_existing_data and store.contains_document(document_id):
             temp_path.unlink(missing_ok=True)
             return UploadResponse(
                 status="success",
@@ -963,6 +958,10 @@ async def upload_file(
                 "embedding_model": gen.model_name,
             })
 
+        # Clear the shared corpus only after the upload has passed validation and embedding.
+        if clear_existing_data:
+            store.clear()
+            retriever.invalidate_cache()
         store.add(embeddings, [chunk["text"] for chunk in chunk_dicts], metadata=metadata_list)
         retriever.invalidate_cache()
         store.save(INDEX_PATH)
