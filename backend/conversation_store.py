@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import os
 import logging
+import threading
+from functools import wraps
 import faiss
 import numpy as np
 from pathlib import Path
@@ -17,6 +19,14 @@ from src.chunking import TextChunker
 
 EMBEDDING_DIM = 384
 logger = logging.getLogger(__name__)
+
+
+def synchronized(method):
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
 
 
 class ConversationStore:
@@ -32,6 +42,7 @@ class ConversationStore:
         self._chunks: list[str] = []
         self._metadata: list[dict] = []
         self._sessions: dict[str, dict] = {}
+        self._lock = threading.RLock()
         self.storage_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         try:
             os.chmod(self.storage_dir, 0o700)
@@ -128,6 +139,7 @@ class ConversationStore:
         faiss.normalize_L2(vecs)
         return vecs
 
+    @synchronized
     def store_conversation(
         self,
         user_id: str,
@@ -189,6 +201,7 @@ class ConversationStore:
             "total_chunks_stored": len(self._chunks),
         }
 
+    @synchronized
     def retrieve_context(
         self,
         user_id: str,
@@ -227,6 +240,7 @@ class ConversationStore:
                 break
         return results
 
+    @synchronized
     def list_sessions(self, user_id: str) -> list[dict]:
         return sorted(
             (session for session in self._sessions.values()
@@ -235,6 +249,7 @@ class ConversationStore:
             reverse=True,
         )
 
+    @synchronized
     def delete_session(self, session_id: str, user_id: str) -> dict:
         key = self._session_key(user_id, session_id)
         if key not in self._sessions:
@@ -258,6 +273,7 @@ class ConversationStore:
         self._save()
         return {"deleted": True, "session_id": session_id}
 
+    @synchronized
     def get_stats(self, user_id: str) -> dict:
         owned_sessions = self.list_sessions(user_id)
         owned_chunks = sum(
