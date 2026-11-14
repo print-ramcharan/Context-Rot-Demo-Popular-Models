@@ -129,11 +129,12 @@ METRIC_CATALOG = {
         "candidate_utilization",
     ],
     "context": [
-        "context_precision", "context_recall", "evidence_retention",
-        "evidence_loss_rate", "token_reduction", "compression_ratio",
-        "evidence_density_before", "evidence_density_after",
-        "evidence_density_gain", "budget_utilization",
-        "context_preservation_score",
+        "context_precision", "context_recall", "source_retention",
+        "chunk_retention", "textual_evidence_retention",
+        "evidence_loss_rate", "word_count_reduction",
+        "word_compression_ratio", "evidence_density_before_per_word",
+        "evidence_density_after_per_word", "evidence_density_gain",
+        "model_token_reduction_unavailable_without_model_tokenizer",
     ],
     "answer": [
         "exact_match", "answer_token_precision", "answer_token_recall",
@@ -459,6 +460,7 @@ def evaluate(request: EvaluationRequest):
         retrieved, retrieval_trace = retriever.retrieve_with_trace(
             case.query,
             evaluation_k=evaluation_k,
+            threshold=retrieval_cfg.get("similarity_threshold", 0.0),
         )
         retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
         relevant = set(case.relevant_sources)
