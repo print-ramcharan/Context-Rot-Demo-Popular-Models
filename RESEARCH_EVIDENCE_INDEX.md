@@ -31,9 +31,22 @@ python -m evaluation.report_depth_audit \
 | Resource/scalability | `backend/evaluation/runners/run_resource_scalability.py` | Index/embedding/BM25 build times, disk and memory estimates, process RSS, retrieval latency over corpus fractions | Runner exists; execution required |
 | Retrieval trace | `backend/evaluation/` trace instrumentation and `backend/tests/` | Rank provenance, passage identity, reranker failure behavior and context metric semantics | Code and regression tests present; run tests in the project environment |
 
-## Security inspection findings
+## Security and deployment controls
 
-The current prototype should not be described as production-secure. The inspected implementation has permissive wildcard CORS in `backend/api.py`; the conversation store persists Python pickle files and has no demonstrated authentication or tenant authorization boundary. Session IDs supplied by callers are not proof of ownership. Do not store sensitive conversations in a shared deployment until authentication, authorization, tenant isolation, safe serialization, encryption, and deletion/retention controls are implemented and tested.
+The earlier source audit identified wildcard CORS, missing API authentication, pickle persistence, and missing session ownership. The current implementation branch adds:
+
+- Signed, expiring bearer-token authentication for private API routes; `/health` and `/auth/login` remain public.
+- PBKDF2-HMAC-SHA256 password verification. The `demo / 123456` account is a development-only default.
+- Explicit CORS origin allowlisting and rejection of wildcard origins.
+- Principal-scoped conversation-memory retrieval, listing, deletion, and statistics.
+- JSON conversation persistence, schema checks, local filesystem permission restrictions, and an in-process store lock.
+- A configurable upload-size limit and browser/extension sign-in flows.
+
+Security implementation notes, deployment variables, limitations, and a proposed scale-out architecture are in `SECURITY_AND_SCALABILITY.md`.
+
+**Validation status:** security and conversation-isolation regression tests have been added to `backend/evaluation/run_reviewer_checks.sh`, but they have not yet been executed against this latest commit. The static source audit is not a penetration test.
+
+**Remaining boundaries:** the configured identity is currently a single application account; the document corpus remains global/shared; local conversation files are not encrypted at rest; token revocation, distributed rate limiting, MFA, enterprise identity, malware scanning, and production infrastructure hardening are not implemented. Do not describe this prototype as fully multi-tenant or production-secure.
 
 ## Reproducibility boundaries
 
