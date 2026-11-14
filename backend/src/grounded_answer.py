@@ -162,7 +162,7 @@ SOURCE EVIDENCE:
     ]
     answer = " ".join(answer_parts)
     if source_lines:
-        answer += "\\n\\nSources: " + "; ".join(source_lines)
+        answer += "\n\nSources: " + "; ".join(source_lines)
     return {
         "answer": answer,
         "abstained": False,
