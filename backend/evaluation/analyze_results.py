@@ -28,6 +28,63 @@ def _records(root: Path, dataset: str, config: str) -> List[dict]:
     return records
 
 
+def _resolve_source_mapping(raw: Path, datasets: Sequence[str]) -> tuple[dict[str, str], str]:
+    """Resolve paper config IDs to raw-file config IDs without editing raw files.
+
+    Current runs carry an exact configuration manifest. The immediately
+    preceding protocol did not; in that protocol B4 was the reranked hybrid
+    system and B2 was dense-only. Accept that legacy layout only when the
+    run metadata says reranking was enabled and every saved record proves the
+    B2/B4 latency signature. This prevents filename-only relabelling.
+    """
+    manifest_path = raw / "run_metadata.json"
+    if not manifest_path.exists():
+        raise RuntimeError(
+            f"Missing {manifest_path}; cannot establish the configuration mapping. "
+            "Raw records have been left untouched."
+        )
+    metadata = json.loads(manifest_path.read_text(encoding="utf-8"))
+    recorded_mapping = metadata.get("configuration_mapping")
+    identity = {key: key for key in CONFIGS}
+    if recorded_mapping == CONFIGS:
+        return identity, "current paper mapping recorded in run_metadata.json"
+    if recorded_mapping is not None:
+        raise RuntimeError(
+            "This run records a different explicit configuration mapping. "
+            "No automatic relabelling was applied."
+        )
+
+    retrieval = metadata.get("config", {}).get("retrieval", {})
+    if retrieval.get("rerank_enabled") is not True:
+        raise RuntimeError(
+            "Legacy run has no configuration_mapping and does not record "
+            "rerank_enabled=true; refusing to infer B2/B4 labels."
+        )
+
+    for dataset in datasets:
+        old_b2 = _records(raw, dataset, "B2")
+        old_b4 = _records(raw, dataset, "B4")
+        ids_b2 = {str(row["query_id"]) for row in old_b2}
+        ids_b4 = {str(row["query_id"]) for row in old_b4}
+        if not ids_b2 or ids_b2 != ids_b4:
+            raise RuntimeError(
+                f"{dataset}: legacy B2/B4 query sets differ; refusing to swap labels."
+            )
+        b2_reranked = [float(row.get("reranking_latency_ms", 0.0)) > 0 for row in old_b2]
+        b4_reranked = [float(row.get("reranking_latency_ms", 0.0)) > 0 for row in old_b4]
+        if any(b2_reranked) or not all(b4_reranked):
+            raise RuntimeError(
+                f"{dataset}: raw B2/B4 reranking-latency signature does not prove "
+                "the historical B2/B4 swap; refusing to relabel."
+            )
+
+    swapped = {"B1": "B1", "B2": "B4", "B3": "B3", "B4": "B2"}
+    return swapped, (
+        "validated legacy mapping: raw B2=dense-only and raw B4=hybrid+reranker; "
+        "paper B2/B4 labels swapped in memory only"
+    )
+
+
 def _result_map(records: List[dict]) -> dict[str, dict[str, float]]:
     """Convert stored rank order to unique scores without changing that order."""
     results: dict[str, dict[str, float]] = {}
@@ -136,23 +193,10 @@ def main() -> None:
     processed = args.output_dir or (run_dir / "processed_rank_preserving")
     processed.mkdir(parents=True, exist_ok=True)
 
-    # Refuse to reinterpret raw B1-B4 records created under the older mapping.
-    # Historical outputs remain untouched; only newly manifested runs are analysed.
-    manifest_path = raw / "run_metadata.json"
-    if not manifest_path.exists():
-        raise RuntimeError(
-            f"Missing {manifest_path}. This run has no recorded B1-B4 mapping; "
-            "do not infer configuration labels from filenames. Re-run the benchmark "
-            "with the current runner to create a versioned manifest."
-        )
-    run_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    recorded_mapping = run_manifest.get("configuration_mapping")
-    if recorded_mapping != CONFIGS:
-        raise RuntimeError(
-            "The run's B1-B4 configuration mapping does not match the current "
-            "paper mapping. Historical results were not modified; use a fresh "
-            "timestamped run before computing paper statistics."
-        )
+    # Resolve current or provably identifiable legacy mapping. Raw JSON files
+    # are read-only; legacy B2/B4 swapping happens only in the analysis view.
+    datasets = ("scifact", "nfcorpus")
+    source_mapping, mapping_resolution = _resolve_source_mapping(raw, datasets)
 
     from evaluation.datasets.load_beir import load_beir_dataset
 
@@ -162,7 +206,7 @@ def main() -> None:
     significance: dict[str, dict] = {}
     query_counts: dict[str, int] = {}
 
-    for dataset in ("scifact", "nfcorpus"):
+    for dataset in datasets:
         _, queries, qrels = load_beir_dataset(data_root / dataset, dataset)
         expected_ids = set(map(str, queries))
         if expected_ids != set(qrels):
@@ -173,7 +217,8 @@ def main() -> None:
         query_counts[dataset] = len(expected_ids)
 
         records_by_config = {
-            config: _records(raw, dataset, config) for config in ("B1", "B2", "B3", "B4")
+            config: _records(raw, dataset, source_mapping[config])
+            for config in ("B1", "B2", "B3", "B4")
         }
         for config, records in records_by_config.items():
             found = {str(record["query_id"]) for record in records}
@@ -222,6 +267,8 @@ def main() -> None:
         "holm_family_size": len(all_tests),
         "query_counts": query_counts,
         "run_dir": str(run_dir),
+        "paper_configuration_to_raw_file_configuration": source_mapping,
+        "mapping_resolution": mapping_resolution,
     }
     (processed / "official_beir_metrics.json").write_text(
         json.dumps(official, indent=2), encoding="utf-8"
