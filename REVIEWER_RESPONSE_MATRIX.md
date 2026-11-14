@@ -15,7 +15,7 @@ This matrix separates completed implementation, executed evidence, and unresolve
 | Longformer / LED / advanced RAG comparison | No matched implementations and measurements | Unresolved |
 | Cross-platform memory benchmark | Runner exists; checked-in JSONL is only a smoke fixture | Harness implemented; labelled evaluation data/results pending |
 | Memory and scalability | Resource runner measures build/index sizes, RSS and latency at corpus scales | Harness implemented; execution/results pending |
-| Privacy and security | Current API has permissive CORS and conversation-store files use pickle; authentication, tenant isolation, encryption and deletion controls are not established by the current code | Unresolved; must not claim secure deployment |
+| Privacy and security | Bearer authentication, PBKDF2 password verification, explicit CORS allowlist, bounded uploads, JSON persistence, and principal-scoped conversation-memory operations implemented; see `SECURITY_AND_SCALABILITY.md` | Baseline controls implemented; tests pending execution. Full document-tenant isolation, encryption at rest, token revocation, rate limiting, and retention controls remain unresolved |
 | Novelty | Contribution framed as an integrated, evaluated engineering pipeline, not a new BM25/dense/RRF/reranking algorithm | Reframing required |
 
 ## Important result interpretation
