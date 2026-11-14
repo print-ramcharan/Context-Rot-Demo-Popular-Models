@@ -16,6 +16,7 @@ from evaluation.metrics.statistical_tests import (
     wilcoxon_signed_rank_test,
     holm_bonferroni,
 )
+from evaluation.runners.retrieval_configs import CONFIGS
 
 
 def _records(root: Path, dataset: str, config: str) -> List[dict]:
@@ -134,6 +135,24 @@ def main() -> None:
     raw = run_dir / "raw" if (run_dir / "raw").is_dir() else run_dir
     processed = args.output_dir or (run_dir / "processed_rank_preserving")
     processed.mkdir(parents=True, exist_ok=True)
+
+    # Refuse to reinterpret raw B1-B4 records created under the older mapping.
+    # Historical outputs remain untouched; only newly manifested runs are analysed.
+    manifest_path = raw / "run_metadata.json"
+    if not manifest_path.exists():
+        raise RuntimeError(
+            f"Missing {manifest_path}. This run has no recorded B1-B4 mapping; "
+            "do not infer configuration labels from filenames. Re-run the benchmark "
+            "with the current runner to create a versioned manifest."
+        )
+    run_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    recorded_mapping = run_manifest.get("configuration_mapping")
+    if recorded_mapping != CONFIGS:
+        raise RuntimeError(
+            "The run's B1-B4 configuration mapping does not match the current "
+            "paper mapping. Historical results were not modified; use a fresh "
+            "timestamped run before computing paper statistics."
+        )
 
     from evaluation.datasets.load_beir import load_beir_dataset
 
