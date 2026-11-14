@@ -1,5 +1,7 @@
 import json
 import pickle
+import os
+import shutil
 from pathlib import Path
 
 import faiss
@@ -98,16 +100,42 @@ class VectorStore:
         return any(item.get("document_id") == document_id for item in self.metadata)
 
     def save(self, directory: str):
+        """Persist a complete, aligned index snapshot using directory swap."""
         self._validate_alignment()
         path = Path(directory)
-        path.mkdir(parents=True, exist_ok=True)
-        faiss.write_index(self.index, str(path / "index.faiss"))
-        with open(path / "chunks.pkl", "wb") as handle:
-            pickle.dump(self.chunks, handle)
-        with open(path / "metadata.pkl", "wb") as handle:
-            pickle.dump(self.metadata, handle)
-        with open(path / "config.json", "w") as handle:
-            json.dump({"dimension": self.dimension, "index_type": self.index_type}, handle)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_name(path.name + ".tmp")
+        backup_path = path.with_name(path.name + ".bak")
+
+        if temp_path.exists():
+            shutil.rmtree(temp_path)
+        temp_path.mkdir(parents=True, exist_ok=True)
+        try:
+            faiss.write_index(self.index, str(temp_path / "index.faiss"))
+            with open(temp_path / "chunks.pkl", "wb") as handle:
+                pickle.dump(self.chunks, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            with open(temp_path / "metadata.pkl", "wb") as handle:
+                pickle.dump(self.metadata, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            with open(temp_path / "config.json", "w", encoding="utf-8") as handle:
+                json.dump({
+                    "dimension": self.dimension,
+                    "index_type": self.index_type,
+                    "total_vectors": self.index.ntotal,
+                    "format_version": 2,
+                }, handle)
+            if backup_path.exists():
+                shutil.rmtree(backup_path)
+            if path.exists():
+                os.replace(path, backup_path)
+            os.replace(temp_path, path)
+            if backup_path.exists():
+                shutil.rmtree(backup_path)
+        except Exception:
+            if temp_path.exists():
+                shutil.rmtree(temp_path, ignore_errors=True)
+            if not path.exists() and backup_path.exists():
+                os.replace(backup_path, path)
+            raise
 
     def load(self, directory: str):
         path = Path(directory)
