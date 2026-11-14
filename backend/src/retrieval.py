@@ -498,17 +498,23 @@ class SemanticRetriever:
         return self._apply_rerank(query, retrieved_items)
 
     def _apply_rerank(self, query: str, candidates: list[dict]) -> list[dict]:
-        if not candidates:
+        if not candidates or not self.enable_rerank:
             return candidates
-        if not self.enable_rerank or not self.reranker:
-            return candidates
+        if self.reranker is None or getattr(self.reranker, "model", object()) is None:
+            raise RuntimeError(
+                "Reranking is enabled, but the cross-encoder is unavailable. "
+                "Refusing to silently return first-stage results as reranked."
+            )
         pool = candidates[: self.rerank_candidate_pool]
         try:
-            reranked = self.reranker.rerank(query, pool, top_n=self.rerank_top_n)
-            return reranked
-        except Exception:
+            return self.reranker.rerank(
+                query, pool, top_n=self.rerank_top_n
+            )
+        except Exception as exc:
             logger.exception("Reranking failed")
-            return candidates
+            raise RuntimeError(
+                "Cross-encoder reranking failed; no unreranked fallback was returned."
+            ) from exc
     
     def retrieve_multi_query(self, queries: list[str], 
                             k: int = None) -> list[dict]:
