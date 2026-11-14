@@ -24,7 +24,7 @@ We thank both reviewers for identifying weaknesses in the evaluation, reproducib
 
 ### 5. Privacy and security
 
-**Response:** We have narrowed the security claims. The current prototype does not establish production-grade authentication, tenant isolation, encryption at rest, or a complete deletion/retention policy. The API's permissive CORS configuration and pickle-based local conversation-store persistence are known risks. These are disclosed as limitations; the prototype is not represented as a security-certified or production-secure system.
+**Response:** The implementation branch now adds signed, expiring bearer-token authentication for private API routes, PBKDF2-HMAC-SHA256 password verification, explicit CORS origin allowlisting, upload-size limits, JSON-based conversation persistence, and principal-scoped conversation-memory operations. The development-only demo credential is `demo / 123456`. These are baseline application controls, not a security certification. The configured identity is currently a single application account; the document corpus remains shared, local conversation files are not encrypted at rest, and token revocation, distributed rate limiting, MFA, and retention enforcement remain unimplemented. New regression tests and a static source audit are included but have not yet been executed against the latest implementation commit. No penetration test has been performed.
 
 ## Reviewer 2
 
@@ -50,7 +50,7 @@ We thank both reviewers for identifying weaknesses in the evaluation, reproducib
 
 ### 6. Data governance and security
 
-**Response:** The revised manuscript distinguishes prototype functionality from production controls. Authentication, authorization, tenant isolation, encryption, retention enforcement, and security testing remain requirements for a production deployment and are not claimed as completed.
+**Response:** The prototype now enforces bearer authentication on private routes and scopes conversation-memory retrieval, listing, deletion, and statistics to the authenticated principal. However, it is still a single configured-account prototype with a shared document corpus; it does not provide full tenant isolation, encryption at rest, enterprise identity, token revocation, or retention enforcement. Regression tests have been added but remain pending execution, and the static source audit is not a substitute for penetration testing.
 
 ## Additional limitation: end-to-end context-degradation evidence
 
@@ -62,4 +62,4 @@ The repository includes a controlled context-degradation runner with question-on
 - Documented the paper-aligned B1–B4 mapping and corrected chunk-level reranking procedure.
 - Added explicit latency interpretation and reproducibility metadata.
 - Distinguished implemented evaluation harnesses from experiments with completed measurements.
-- Narrowed novelty, security, and context-degradation claims to what the evidence supports.
+- Narrowed novelty and context-degradation claims to what the evidence supports; documented implemented security controls and remaining deployment limitations in `SECURITY_AND_SCALABILITY.md`.
