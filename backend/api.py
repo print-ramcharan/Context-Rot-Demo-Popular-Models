@@ -1,6 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 from src.inference import LLMInference 
 from src.retrieval import SemanticRetriever 
@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Optional, List, Any
 from conversation_store import ConversationStore
 from dotenv import load_dotenv
+from auth import authenticate, create_access_token, verify_access_token, TOKEN_TTL_SECONDS
 
 # Load environment variables
 load_dotenv() # Trigger reload
@@ -42,18 +43,48 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Context Rot Lab API",
     description="Precision RAG Engine API",
-    version="2.0.0"
+    version="2.1.0"
 )
 
-# Enable CORS for frontend
+# Explicit browser-origin allowlist. Configure CORS_ALLOWED_ORIGINS in deployment.
+_default_origins = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
+allowed_origins = [
+    origin.strip() for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS", _default_origins
+    ).split(",") if origin.strip()
+]
+if os.getenv("APP_ENV", "development").lower() == "production" and not allowed_origins:
+    raise RuntimeError("CORS_ALLOWED_ORIGINS must be configured in production")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
+# All API routes require a signed bearer token except health and login.
+@app.middleware("http")
+async def authenticate_private_routes(request: Request, call_next):
+    if request.method == "OPTIONS" or request.url.path in {"/health", "/auth/login"}:
+        return await call_next(request)
+    authorization = request.headers.get("Authorization", "")
+    scheme, separator, token = authorization.partition(" ")
+    user_id = verify_access_token(token) if separator and scheme.lower() == "bearer" else None
+    if not user_id:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Authentication required or token expired"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    request.state.user_id = user_id
+    return await call_next(request)
+
 # Request models
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
 class QueryRequest(BaseModel):
     user_query: str
 
@@ -368,6 +399,18 @@ RESEARCH_CATALOG = {
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "timestamp": time.time()}
+
+@app.post("/auth/login")
+def login(request: LoginRequest):
+    if not authenticate(request.username, request.password):
+        # Keep the response identical for unknown users and incorrect passwords.
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    token = create_access_token(request.username)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": TOKEN_TTL_SECONDS,
+    }
 
 @app.get("/metrics")
 def get_metrics():
@@ -1144,12 +1187,14 @@ async def clear_store():
 # ── Extra Backend Features ───────────────────────────────────────────────────
 
 @app.post("/store-conversation")
-async def store_conversation(request: StoreConversationRequest):
+async def store_conversation(request: StoreConversationRequest, http_request: Request):
+    request_user_id = http_request.state.user_id
     try:
         if not request.prompt.strip() and not request.response.strip():
             raise ValueError("Both prompt and response are empty — nothing to store")
 
         result = conv_store.store_conversation(
+            user_id=request_user_id,
             platform=request.platform,
             session_id=request.session_id,
             prompt=request.prompt,
@@ -1163,12 +1208,14 @@ async def store_conversation(request: StoreConversationRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/retrieve-context")
-async def retrieve_context(request: RetrieveContextRequest):
+async def retrieve_context(request: RetrieveContextRequest, http_request: Request):
+    request_user_id = http_request.state.user_id
     try:
         if not request.query.strip():
             raise ValueError("Query cannot be empty")
 
         chunks = conv_store.retrieve_context(
+            user_id=request_user_id,
             query=request.query,
             embedding_generator=gen,
             top_k=request.top_k,
@@ -1186,8 +1233,8 @@ async def retrieve_context(request: RetrieveContextRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/list-sessions")
-def list_sessions():
-    sessions = conv_store.list_sessions()
+def list_sessions(request: Request):
+    sessions = conv_store.list_sessions(request.state.user_id)
     return {
         "status": "success",
         "sessions": sessions,
@@ -1195,9 +1242,9 @@ def list_sessions():
     }
 
 @app.delete("/delete-session/{session_id}")
-def delete_session(session_id: str):
+def delete_session(session_id: str, request: Request):
     try:
-        result = conv_store.delete_session(session_id)
+        result = conv_store.delete_session(session_id, request.state.user_id)
         if not result.get("deleted", False):
             raise HTTPException(status_code=404, detail=result.get("reason", "Session not found"))
         
@@ -1210,8 +1257,8 @@ def delete_session(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/conv-stats")
-def conv_stats():
-    return {"status": "success", **conv_store.get_stats()}
+def conv_stats(request: Request):
+    return {"status": "success", **conv_store.get_stats(request.state.user_id)}
 
 # ── Helper Functions ──────────────────────────────────────────────────────────
 
