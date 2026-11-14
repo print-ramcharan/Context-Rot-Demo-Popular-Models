@@ -57,3 +57,21 @@ class TestIntegration:
         new_system.load_memory(save_path)
         
         assert new_system.get_statistics()['total_chunks'] == system.get_statistics()['total_chunks']
+
+    def test_ingestion_assigns_stable_identity_and_skips_duplicate(self, system):
+        document = "Stable identity test document with enough words to create chunks."
+        first = system.ingest_document(document, source="identity-test")
+        assert first["duplicate"] is False
+        assert first["document_id"]
+        before = system.get_statistics()["total_chunks"]
+
+        stored = [m for m in system.vector_store.metadata
+                  if m.get("document_id") == first["document_id"]]
+        assert stored
+        assert all(m.get("chunk_id") for m in stored)
+        assert len({m["chunk_id"] for m in stored}) == len(stored)
+
+        second = system.ingest_document(document, source="renamed-file")
+        assert second["duplicate"] is True
+        assert second["document_id"] == first["document_id"]
+        assert system.get_statistics()["total_chunks"] == before
