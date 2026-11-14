@@ -84,7 +84,7 @@ SOURCE EVIDENCE:
 
     generated = llm.generate(generation_prompt, max_tokens=max_tokens, temperature=0.0)
     parsed = _parse_json_object(generated.get("response", ""))
-    if not parsed or parsed.get("abstain") is True:
+    if not parsed or parsed.get("abstain") is not False:
         return {"answer": ABSTENTION, "abstained": True, "citations": [], "reason": "generation_abstained_or_invalid"}
 
     claims = parsed.get("claims")
@@ -92,7 +92,6 @@ SOURCE EVIDENCE:
         return {"answer": ABSTENTION, "abstained": True, "citations": [], "reason": "no_claims"}
 
     normalized_claims = []
-    used_ids = []
     for claim in claims:
         if not isinstance(claim, dict):
             return {"answer": ABSTENTION, "abstained": True, "citations": [], "reason": "invalid_claim"}
@@ -103,7 +102,6 @@ SOURCE EVIDENCE:
         if any(not isinstance(evidence_id, str) or evidence_id not in evidence_lookup for evidence_id in ids):
             return {"answer": ABSTENTION, "abstained": True, "citations": [], "reason": "invalid_evidence_reference"}
         normalized_claims.append({"text": text, "evidence_ids": ids})
-        used_ids.extend(ids)
 
     verification_prompt = f"""
 You are a strict evidence auditor. Determine whether EVERY claim is directly
@@ -127,8 +125,8 @@ SOURCE EVIDENCE:
     verification = llm.generate(verification_prompt, max_tokens=350, temperature=0.0)
     verdict = _parse_json_object(verification.get("response", ""))
     if (not verdict or verdict.get("supported") is not True
-            or verdict.get("unsupported_claims") not in ([], None)
-            or verdict.get("conflicts") not in ([], None)):
+            or verdict.get("unsupported_claims") != []
+            or verdict.get("conflicts") != []):
         return {
             "answer": ABSTENTION,
             "abstained": True,
