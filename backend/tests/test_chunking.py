@@ -63,11 +63,11 @@ class TestTextChunker:
 
     def test_chunk_offsets_reference_original_whitespace(self):
         chunker = TextChunker(chunk_size=2, overlap=0)
-        source = "  alpha\\n\\t beta   gamma "
+        source = "  alpha\n\t beta   gamma "
         chunks = chunker.chunk_document(source)
         first = chunks[0]
         second = chunks[1]
         assert first["text"] == "alpha beta"
-        assert source[first["offset"]:first["offset"] + first["length"]] == "alpha\\n\\t beta"
+        assert source[first["offset"]:first["offset"] + first["length"]] == "alpha\n\t beta"
         assert second["text"] == "gamma"
         assert source[second["offset"]:second["offset"] + second["length"]] == "gamma"
