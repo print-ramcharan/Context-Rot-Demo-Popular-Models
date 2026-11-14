@@ -187,6 +187,7 @@ def run_dataset(
     overlap: int,
     index_type: str,
     trace_dir: Path,
+    batch_size: int = 25,
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     corpus, queries, qrels = load_beir_dataset(data_path, dataset_name)
     logger.info("Loaded %s: %d documents, %d queries", dataset_name, len(corpus), len(queries))
@@ -218,6 +219,10 @@ def run_dataset(
 
         reranker = CrossEncoderReranker(model_name=cfg["rerank_model"])
 
+    # Checkpoint files are written after each query/configuration. Re-running
+    # with the same --run-dir resumes from completed records instead of losing
+    # hours of work when a process is interrupted.
+    trace_dir.mkdir(parents=True, exist_ok=True)
     per_query_records = []
     latency_cfg = cfg.get("latency", {})
     latency_sample_size = max(0, int(latency_cfg.get("sample_size", 30)))
@@ -227,9 +232,16 @@ def run_dataset(
         query_ids, min(latency_sample_size, len(query_ids))
     )) if latency_sample_size else set()
 
-    for qid in query_ids:
+    for query_index, qid in enumerate(query_ids, start=1):
         query_text = queries[qid]
         for config_id, config in CONFIGS.items():
+            checkpoint_path = trace_dir / f"{dataset_name}_{config_id}_{qid}.json"
+            if checkpoint_path.exists():
+                try:
+                    per_query_records.append(json.loads(checkpoint_path.read_text(encoding="utf-8")))
+                    continue
+                except (OSError, json.JSONDecodeError):
+                    logger.warning("Ignoring invalid checkpoint %s; recomputing", checkpoint_path)
             config_start = time.perf_counter()
             retrieved_chunks, depth = _run_config_with_depth(
                 query_text,
@@ -307,11 +319,18 @@ def run_dataset(
                 "metrics": metrics,
             }
             per_query_records.append(record)
+            checkpoint_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
 
-    trace_dir.mkdir(parents=True, exist_ok=True)
-    for rec in per_query_records:
-        out_path = trace_dir / f"{rec['dataset']}_{rec['configuration']}_{rec['query_id']}.json"
-        out_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+        if query_index % max(1, batch_size) == 0 or query_index == len(query_ids):
+            completed = sum(
+                1 for config_id in CONFIGS
+                for candidate_qid in query_ids
+                if (trace_dir / f"{dataset_name}_{config_id}_{candidate_qid}.json").exists()
+            )
+            logger.info(
+                "%s checkpoint: %d/%d queries visited; %d/%d query-configuration records saved",
+                dataset_name, query_index, len(query_ids), completed, len(query_ids) * len(CONFIGS)
+            )
 
     return aggregate_records(per_query_records), per_query_records
 
@@ -655,8 +674,11 @@ def _package_available(name: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run-dir", type=Path, help="Output directory for this benchmark run")
+    parser.add_argument("--run-dir", type=Path, help="Output directory for this benchmark run; reuse it to resume")
+    parser.add_argument("--batch-size", type=int, default=25, help="Queries per progress checkpoint (default: 25)")
     args = parser.parse_args()
+    if args.batch_size < 1:
+        parser.error("--batch-size must be at least 1")
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     cfg = load_config()
 
@@ -671,7 +693,9 @@ def main() -> None:
         results_root / "runs" / f"depth_audit_{time.strftime('%Y%m%d_%H%M%S')}"
     )
     results_dir = run_dir / "raw"
-    print(f"RUN_DIR={run_dir}")
+    results_dir.mkdir(parents=True, exist_ok=True)
+    print(f"RUN_DIR={run_dir}", flush=True)
+    print(f"Resume this exact run with: python -m evaluation.runners.run_retrieval --run-dir \"{run_dir}\"", flush=True)
 
     embedding_generator = EmbeddingGenerator(
         model_name=embedding_cfg["model_name"],
@@ -697,6 +721,7 @@ def main() -> None:
             overlap=chunk_cfg["overlap"],
             index_type=index_type,
             trace_dir=trace_dir,
+            batch_size=args.batch_size,
         )
         all_summary.update(summary)
         all_records.extend(dataset_records)
