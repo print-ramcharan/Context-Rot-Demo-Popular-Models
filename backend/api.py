@@ -57,14 +57,6 @@ allowed_origins = [
     origin.strip() for origin in (cors_setting or _default_origins).split(",")
     if origin.strip()
 ]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-)
-
 # All API routes require a signed bearer token except health and login.
 @app.middleware("http")
 async def authenticate_private_routes(request: Request, call_next):
@@ -81,6 +73,15 @@ async def authenticate_private_routes(request: Request, call_next):
         )
     request.state.user_id = user_id
     return await call_next(request)
+
+# Register CORS last so it wraps auth responses and adds CORS headers to 401s.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 # Request models
 class LoginRequest(BaseModel):
