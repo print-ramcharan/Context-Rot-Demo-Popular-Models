@@ -847,6 +847,7 @@ async def upload_file(
         if clear_existing_data:
             store.clear()
             retriever.invalidate_cache()
+            store.save(INDEX_PATH)
 
         safe_filename = Path(file.filename or "upload").name
         suffix = Path(safe_filename).suffix.lower()
@@ -1046,7 +1047,9 @@ def reindex_documents():
     """Rebuild the active index from files already stored in backend/data.
 
     Use this once after changing the embedding model or index dimension.
+    The existing in-memory index is kept until the replacement is fully built.
     """
+    global store
     files = sorted(
         path for path in DATA_DIR.iterdir()
         if path.is_file() and path.suffix.lower() in {".pdf", ".docx", ".txt", ".md"}
@@ -1055,7 +1058,10 @@ def reindex_documents():
     if not files:
         raise HTTPException(status_code=400, detail="No supported source files found in backend/data")
 
-    store.clear()
+    rebuilt_store = VectorStore(
+        dimension=gen.get_embedding_dimension(),
+        index_type=storage_cfg.get("index_type", "cosine"),
+    )
     indexed_files = []
     failures = []
     for path in files:
@@ -1065,18 +1071,26 @@ def reindex_documents():
                 failures.append({"file": path.name, "error": "No text extracted"})
                 continue
             document_id = document_id_for(text_content)
-            if store.contains_document(document_id):
+            if rebuilt_store.contains_document(document_id):
                 continue
             chunk_dicts = chunker.chunk_document(text_content)
+            if not chunk_dicts:
+                failures.append({"file": path.name, "error": "No indexable chunks"})
+                continue
             embedding_texts = [
                 ("Section: " + " > ".join(chunk.get("section_path", [])) + "\n" + chunk["text"]).strip()
                 for chunk in chunk_dicts
             ]
             embeddings = gen.embed_batch(embedding_texts, batch_size=16)
+            source_name = path.name
+            if len(source_name) > 17 and source_name[16] == "_" and all(
+                character in "0123456789abcdef" for character in source_name[:16]
+            ):
+                source_name = source_name[17:]
             metadata = [{
                 "document_id": document_id,
                 "chunk_id": chunk_id_for(document_id, index, chunk["text"]),
-                "source": path.name,
+                "source": source_name,
                 "chunk_index": index,
                 "parent_id": chunk.get("parent_id"),
                 "section_path": chunk.get("section_path", []),
@@ -1086,17 +1100,22 @@ def reindex_documents():
                 "word_count": chunk["word_count"],
                 "embedding_model": gen.model_name,
             } for index, chunk in enumerate(chunk_dicts)]
-            store.add(embeddings, [chunk["text"] for chunk in chunk_dicts], metadata=metadata)
-            indexed_files.append({"file": path.name, "chunks": len(chunk_dicts)})
+            rebuilt_store.add(embeddings, [chunk["text"] for chunk in chunk_dicts], metadata=metadata)
+            indexed_files.append({"file": source_name, "chunks": len(chunk_dicts)})
         except Exception as exc:
             logger.exception("Reindex failed for %s", path.name)
             failures.append({"file": path.name, "error": str(exc)})
 
     if not indexed_files:
-        raise HTTPException(status_code=500, detail={"message": "No documents could be reindexed", "failures": failures})
+        raise HTTPException(
+            status_code=500,
+            detail={"message": "No documents could be reindexed; the existing index was preserved.", "failures": failures},
+        )
 
+    rebuilt_store.save(INDEX_PATH)
+    store = rebuilt_store
+    retriever.vector_store = store
     retriever.invalidate_cache()
-    store.save(INDEX_PATH)
     retriever.build_lexical_index()
     return {
         "status": "success",
@@ -1113,6 +1132,7 @@ def reindex_documents():
 async def clear_store():
     store.clear()
     retriever.invalidate_cache()
+    store.save(INDEX_PATH)
     return {"status": "success"}
 
 # ── Extra Backend Features ───────────────────────────────────────────────────
