@@ -71,15 +71,15 @@ metrics and statistics under `processed_rank_preserving/`. The depth audit
 uses the same validated mapping and writes
 `DEPTH_AUDIT_REPORT_PAPER_MAPPING.md`, preserving any earlier report.
 
-Run only these post-processing commands from `backend/`; they do not execute
+From the repository root, run this single post-processing command. It uses
+the existing backend virtual environment when available and does not execute
 retrieval, load embedding models, or call an LLM API:
 
 ```bash
-python -m evaluation.analyze_results \\
-  --run-dir evaluation/results/runs/depth_audit_20261114_191803
-python -m evaluation.report_depth_audit \\
-  --run-dir evaluation/results/runs/depth_audit_20261114_191803
+bash backend/evaluation/run_existing_analysis.sh
 ```
+
+To analyze another compatible run, pass its run directory as the first argument.
 
 The analyzer checks full query coverage against the installed BEIR datasets
 and stops if the run is incomplete or its mapping cannot be proven. The
