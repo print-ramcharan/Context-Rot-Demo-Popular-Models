@@ -71,3 +71,11 @@ class TestTextChunker:
         assert source[first["offset"]:first["offset"] + first["length"]] == "alpha\n\t beta"
         assert second["text"] == "gamma"
         assert source[second["offset"]:second["offset"] + second["length"]] == "gamma"
+
+    def test_rejects_non_positive_chunk_size(self):
+        with pytest.raises(ValueError, match="chunk_size"):
+            TextChunker(chunk_size=0, overlap=0)
+
+    def test_rejects_negative_overlap(self):
+        with pytest.raises(ValueError, match="overlap"):
+            TextChunker(chunk_size=10, overlap=-1)
