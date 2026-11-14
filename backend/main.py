@@ -1,6 +1,7 @@
 import yaml
 from pathlib import Path
 from src.chunking import TextChunker
+from src.document_identity import document_id_for, chunk_id_for
 from src.embedding import EmbeddingGenerator
 from src.vector_store import VectorStore
 from src.retrieval import SemanticRetriever
@@ -104,6 +105,19 @@ class ExternalMemorySystem:
         """
         Process and store a document in external memory.
         """
+        # Identify documents by content, not filename or ingestion order.
+        document_id = document_id_for(text)
+        if self.vector_store.contains_document(document_id):
+            return {
+                'chunks_created': 0,
+                'embeddings_stored': 0,
+                'source': source,
+                'file_type': file_type,
+                'document_id': document_id,
+                'duplicate': True,
+                'message': 'Document content is already indexed'
+            }
+
         # 1. Chunk
         chunk_dicts = self.chunker.chunk_document(text)
         if not chunk_dicts:
@@ -116,7 +130,10 @@ class ExternalMemorySystem:
             }
         chunks = [c["text"] for c in chunk_dicts]
         metadata = self.chunker.get_chunk_metadata(chunks)
-        for m, chunk_info in zip(metadata, chunk_dicts):
+        for index, (m, chunk_info) in enumerate(zip(metadata, chunk_dicts)):
+            m['document_id'] = document_id
+            m['chunk_id'] = chunk_id_for(document_id, index, chunks[index])
+            m['chunk_index'] = index
             m['char_offset'] = chunk_info.get('offset', 0)
             m['char_length'] = chunk_info.get('length', 0)
             if source: m['source'] = source
@@ -137,7 +154,9 @@ class ExternalMemorySystem:
             'chunks_created': len(chunks),
             'embeddings_stored': len(embeddings),
             'source': source,
-            'file_type': file_type
+            'file_type': file_type,
+            'document_id': document_id,
+            'duplicate': False
         }
     
     def ingest_file(self, file_path: str) -> dict:
