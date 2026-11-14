@@ -214,8 +214,9 @@ class SemanticRetriever:
             if index in bm25_by_index:
                 score += 1.0 / (60 + bm25_by_index[index]["rank"])
             rrf_scores[index] = score
+        # Stable index tie-break makes equal-score RRF rankings reproducible.
         rrf_entries = sorted(
-            rrf_scores.items(), key=lambda item: item[1], reverse=True
+            rrf_scores.items(), key=lambda item: (-item[1], item[0])
         )[: max(self.dense_k + self.bm25_k, max_k)]
         rrf_ms = (time.perf_counter() - rrf_start) * 1000
 
@@ -471,7 +472,8 @@ class SemanticRetriever:
             if idx in bm25_rank_map:
                 rrf_scores[idx] += 1.0 / (RRF_K + bm25_rank_map[idx])
 
-        ranked = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
+        # Stable index tie-break makes equal-score RRF rankings reproducible.
+        ranked = sorted(rrf_scores.items(), key=lambda item: (-item[1], item[0]))
 
         retrieved_items = []
         for rank, (idx, score) in enumerate(ranked[:k]):
