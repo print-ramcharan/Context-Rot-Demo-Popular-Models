@@ -6,7 +6,7 @@ The implementation branch adds the following baseline controls:
 
 - **Authentication:** private API routes require a signed bearer token. Only `/health` and `/auth/login` are public. Tokens expire after the configured `AUTH_TOKEN_TTL_SECONDS` (default one hour).
 - **Credential handling:** passwords are verified using PBKDF2-HMAC-SHA256 with 310,000 iterations and constant-time comparisons. The configured password is not written to the conversation store. The development-only default is `demo / 123456`.
-- **Secret management:** production startup requires `AUTH_SECRET_KEY` and `DEMO_PASSWORD`. Supply secrets through the deployment environment or a secret manager; do not commit `.env`.
+- **Secret management:** production startup requires `AUTH_SECRET_KEY`, `DEMO_USERNAME`, and a unique `DEMO_PASSWORD` of at least 12 characters. The signing key must be at least 32 bytes and must not be the example placeholder. Supply secrets through the deployment environment or a secret manager; do not commit `.env`.
 - **CORS:** browser origins are explicitly allowlisted. Production startup requires `CORS_ALLOWED_ORIGINS`.
 - **Conversation ownership:** every conversation record carries a principal ID. Retrieval, listing, deletion, and statistics filter by the authenticated principal. Session identifiers are not treated as authorization.
 - **Persistence:** conversation chunks and metadata use JSON rather than Python pickle. JSON is parsed as data and basic record types/counts are validated. Legacy pickle files are intentionally not loaded.
